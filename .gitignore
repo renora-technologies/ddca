@@ -22,3 +22,5 @@ webapp
 # vs code settings
 .vscode
 
+/reports
+
