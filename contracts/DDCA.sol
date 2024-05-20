@@ -64,10 +64,8 @@ contract DDCA is Executor {
 
     modifier lock() {
         // first runs this check
-        _isLocked = true;
-
         require(!_isLocked);
-
+        _isLocked = true;
         // runs the rest of the code which has this modifier
         _;
 
