@@ -52,7 +52,7 @@ contract DDCA is Executor {
      */
     IERC20 public immutable quoteToken;
 
-    /**
+   /**
      * @dev setting the base and the quote curency (trading pair) of the contract
      * @param _baseToken the base currency
      * @param _quoteToken the quote currency
@@ -212,14 +212,13 @@ contract DDCA is Executor {
         for (uint i = 0; i < clients.length; i++) {
             address _client = clients[i];
 
-            Node memory _clientNode = nodes[_client];
+            Node storage _clientNode = nodes[_client];
 
             if (_clientNode.quoteTokenAmount >= _clientNode.lotSize) {
                 /**
                  * @dev calculating reward for the swap
                  */
-                uint256 reward = (_clientNode.lotSize / _totalLotSize) *
-                    _amountOut;
+                uint256 reward = (_clientNode.lotSize * _amountOut) / _totalLotSize;
 
                 /**
                  * @dev updating base token amount
@@ -236,11 +235,6 @@ contract DDCA is Executor {
                 if (_clientNode.quoteTokenAmount == 0) {
                     _totalLotSize -= _clientNode.lotSize;
                 }
-
-                /**
-                 * @dev updating clients node
-                 */
-                nodes[_client] = _clientNode;
             }
         }
     }
@@ -274,7 +268,7 @@ contract DDCA is Executor {
      * @param _amount The amount to be withdrawn
      */
     function withdrawBaseToken(uint256 _amount) public returns (bool) {
-        Node memory clientNode = _getClientNode(msg.sender);
+        Node storage clientNode = nodes[msg.sender];
 
         uint256 tokenBalance = clientNode.baseTokenAmount;
 
@@ -285,8 +279,10 @@ contract DDCA is Executor {
         if (_status == true) {
             clientNode.baseTokenAmount -= _amount;
             nodes[msg.sender] = clientNode;
+            _removeClientIfZeroBalance(msg.sender);
         }
 
+        emit Withdraw(_status, _amount, msg.sender);
         return _status;
     }
 
@@ -296,7 +292,7 @@ contract DDCA is Executor {
      * @param _amount The amount to be withdrawn
      */
     function withdrawQuoteToken(uint256 _amount) public returns (bool) {
-        Node memory clientNode = _getClientNode(msg.sender);
+        Node storage clientNode = nodes[msg.sender];
 
         uint256 tokenBalance = clientNode.quoteTokenAmount;
 
@@ -307,13 +303,31 @@ contract DDCA is Executor {
         if (_status == true) {
             clientNode.quoteTokenAmount -= _amount;
 
-            if (clientNode.quoteTokenAmount <= clientNode.lotSize) {
+            if (clientNode.quoteTokenAmount < clientNode.lotSize) {
                 _totalLotSize -= clientNode.lotSize;
             }
 
             nodes[msg.sender] = clientNode;
+            _removeClientIfZeroBalance(msg.sender);
         }
 
+        emit Withdraw(_status, _amount, msg.sender);
         return _status;
+    }
+
+    function _removeClientIfZeroBalance(address _client) internal {
+        Node memory clientNode = nodes[_client];
+        if (clientNode.baseTokenAmount == 0 && clientNode.quoteTokenAmount == 0) {
+            // Remove client from the clients array
+            for (uint i = 0; i < clients.length; i++) {
+                if (clients[i] == _client) {
+                    clients[i] = clients[clients.length - 1];
+                    clients.pop();
+                    break;
+                }
+            }
+            // Remove client from nodes mapping
+            delete nodes[_client];
+        }
     }
 }
