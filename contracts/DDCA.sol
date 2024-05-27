@@ -19,6 +19,8 @@ import "../interfaces/ITachySwapRouter02.sol";
  */
 contract DDCA is Executor {
     event Log(string message);
+    event LogAddress(address add);
+    event LogAmount(uint256 amount);
 
     event Deposit(bool status, uint256 amount, address client);
     event Withdraw(bool status, uint256 amount, address client);
@@ -211,36 +213,44 @@ contract DDCA is Executor {
         return _amountsOut[1];
     }
 
-    function _distributeReward(uint256[] memory _amounts) private {
+   function _distributeReward(uint256[] memory _amounts, uint256 _swapTotalLotSize) private {
         uint256 _amountOut = _amounts[1];
         uint256 totalReward = 0;
 
+        emit Log("Distributing rewards");
+        emit LogAmount(_amountOut);
+
         for (uint i = 0; i < clients.length; i++) {
             address _client = clients[i];
-
             Node storage _clientNode = nodes[_client];
+
+            emit LogAddress(_client);
+            emit LogAmount(_clientNode.quoteTokenAmount);
 
             if (_clientNode.quoteTokenAmount >= _clientNode.lotSize) {
                 /**
                  * @dev calculating reward for the swap
                  */
-                uint256 reward = (_clientNode.lotSize * _amountOut) / _totalLotSize;
+                uint256 reward = (_clientNode.lotSize * _amountOut) / _swapTotalLotSize;
+
+                emit LogAmount(reward);
 
                 /**
                  * @dev updating base token amount
                  */
                 _clientNode.baseTokenAmount += reward;
                 totalReward += reward;
+                emit LogAmount(totalReward);
 
                 /**
                  * @dev updating quote token amount
                  */
                 _clientNode.quoteTokenAmount -= _clientNode.lotSize;
-
+                
                 /**
                  * @dev removing the clients lotSize from the totalLotSize
                  */
-                if (_clientNode.quoteTokenAmount == 0) {
+                if (_clientNode.quoteTokenAmount == 0 || _clientNode.quoteTokenAmount < _clientNode.lotSize) {
                     _totalLotSize -= _clientNode.lotSize;
                 }
             }
@@ -267,7 +277,7 @@ contract DDCA is Executor {
                 block.timestamp
             )
         returns (uint[] memory _amounts) {
-            _distributeReward(_amounts);
+            _distributeReward(_amounts, _totalLotSize);
 
             emit Swapped(_amounts);
         } catch Error(string memory reason) {

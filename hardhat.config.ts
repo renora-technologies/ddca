@@ -15,7 +15,7 @@ const config: HardhatUserConfig = {
       url: 'http://127.0.0.1:8545',
     },
     sepolia: {
-      url: `https://sepolia.infura.io/v3/${INFURA_API_KEY}`,
+      url: `https://rpc2.sepolia.org`,
       accounts: [METAMASK_PRIVATE_KEY],
     },
     ['etherlink-test']: {
@@ -24,11 +24,11 @@ const config: HardhatUserConfig = {
       chainId: 128123,
     },
   },
-  etherscan: {
-    apiKey: {
-      sepolia: ETHERSCAN_API_KEY,
-    },
-  },
+  // etherscan: {
+  //   apiKey: {
+  //     sepolia: ETHERSCAN_API_KEY,
+  //   },
+  // },
   solidity: {
     version: '0.8.24',
     settings: {
