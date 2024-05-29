@@ -45,7 +45,8 @@ const config: HardhatUserConfig = {
     artifacts: './artifacts',
   },
   mocha: {
-    timeout: 40000,
+    timeout: 20000, // Increase timeout if necessary
+    reporter: "spec" // Use the "spec" reporter for detailed output
   },
   gasReporter: {
     enabled: true,
