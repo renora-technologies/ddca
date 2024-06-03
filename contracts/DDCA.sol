@@ -31,6 +31,10 @@ contract DDCA is Executor {
         address account;
         uint256 baseTokenAmount;
         uint256 quoteTokenAmount;
+        uint256 totalAmountBought;
+        uint256 totalCostPrice;
+        uint256 avgBoughtPrice;
+        uint256 totalFees;
         uint256 lotSize;
     }
 
@@ -38,6 +42,9 @@ contract DDCA is Executor {
     address[] public clients;
 
     uint256 private _totalLotSize = 0;
+    uint256 private _totalFeesCollected = 0;
+    uint256 private _feesPercent = 1; // default 1%
+
     bool private _isLocked = false;
     bool private _swapInProgress = false;
 
@@ -54,7 +61,7 @@ contract DDCA is Executor {
      */
     IERC20 public immutable quoteToken;
 
-   /**
+    /**
      * @dev setting the base and the quote curency (trading pair) of the contract
      * @param _baseToken the base currency
      * @param _quoteToken the quote currency
@@ -89,6 +96,10 @@ contract DDCA is Executor {
         _node.baseTokenAmount = 0;
         _node.quoteTokenAmount = _amount;
         _node.lotSize = _lotSize;
+        _node.totalAmountBought = 0;
+        _node.totalCostPrice = 0;
+        _node.avgBoughtPrice = 0;
+        _node.totalFees = 0;
 
         nodes[msg.sender] = _node;
 
@@ -103,6 +114,14 @@ contract DDCA is Executor {
 
     function getTotalLotSize() public view returns (uint256) {
         return _totalLotSize;
+    }
+
+    function getTotalFeesCollected() public view returns (uint256) {
+        return _totalFeesCollected;
+    }
+
+    function getFeesPercent() public view returns (uint256) {
+        return _feesPercent;
     }
 
     function _getClientNode(
@@ -213,7 +232,7 @@ contract DDCA is Executor {
         return _amountsOut[1];
     }
 
-   function _distributeReward(uint256[] memory _amounts, uint256 _swapTotalLotSize) private {
+    function _distributeReward(uint256[] memory _amounts, uint256 _swapTotalLotSize, uint256 swapAmount) private {
         uint256 _amountOut = _amounts[1];
         uint256 totalReward = 0;
 
@@ -239,7 +258,10 @@ contract DDCA is Executor {
                  * @dev updating base token amount
                  */
                 _clientNode.baseTokenAmount += reward;
-                totalReward += reward;
+                _clientNode.totalAmountBought += reward;
+                _clientNode.totalCostPrice += _clientNode.lotSize;
+                _clientNode.avgBoughtPrice = _clientNode.totalCostPrice/_clientNode.totalAmountBought;
+                 totalReward += reward;
                 emit LogAmount(totalReward);
 
                 /**
@@ -253,6 +275,12 @@ contract DDCA is Executor {
                 if (_clientNode.quoteTokenAmount == 0 || _clientNode.quoteTokenAmount < _clientNode.lotSize) {
                     _totalLotSize -= _clientNode.lotSize;
                 }
+
+                /**
+                 * @dev updating total fees charged
+                 */
+                uint256 clientFee = (_clientNode.lotSize * _feesPercent) / 100;
+                _clientNode.totalFees += clientFee;
             }
         }
 
@@ -263,22 +291,26 @@ contract DDCA is Executor {
     function swap() public onlyExecutor lock {
         _swapInProgress = true;
 
+        uint256 feeAmount = _totalLotSize * _feesPercent / 100;
+        uint256 swapAmount = _totalLotSize - feeAmount;
+
         require(
-            quoteToken.approve(address(_router), _totalLotSize),
+            quoteToken.approve(address(_router), swapAmount),
             "Failed to approve router."
         );
 
         try
             _router.swapExactTokensForTokens(
-                _totalLotSize,
-                _getMinAmountOut(_totalLotSize),
+                swapAmount,
+                _getMinAmountOut(swapAmount),
                 _getSwapPath(),
                 address(this),
                 block.timestamp
             )
         returns (uint[] memory _amounts) {
-            _distributeReward(_amounts, _totalLotSize);
+            _distributeReward(_amounts, _totalLotSize, swapAmount);
 
+            _totalFeesCollected += feeAmount;
             emit Swapped(_amounts);
         } catch Error(string memory reason) {
             emit Log(reason);
@@ -386,5 +418,29 @@ contract DDCA is Executor {
         if (_status == true) {
             clientNode.quoteTokenAmount += _amount;
         }
+    }
+
+    /**
+     * @notice Function to update the fees percent
+     *
+     * @param newFeesPercent The new fees percent
+     */
+    function updateFeesPercent(uint256 newFeesPercent) public onlyExecutor {
+        require(newFeesPercent <= 100, "Fees percent cannot exceed 100");
+        _feesPercent = newFeesPercent;
+    }
+
+    /**
+     * @notice Function to withdraw the collected fees
+     *
+     * @param amount The amount of fees to withdraw
+     */
+    function withdrawFees(uint256 amount) public onlyExecutor {
+        require(amount <= _totalFeesCollected, "Insufficient fees to withdraw");
+
+        bool _status = quoteToken.transfer(msg.sender, amount);
+        require(_status, "Withdrawal failed");
+
+        _totalFeesCollected -= amount;
     }
 }

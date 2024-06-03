@@ -200,57 +200,57 @@ describe('DDCA', function () {
     expect(Number(client1Quote0)).to.be.equal(_quoteTokenAmount);
     expect(Number(client2Quote0)).to.be.equal(_quoteTokenAmount);
   });
-  // Top-up Scenario
-it('Top-up DDCA for client1 and client2', async function () {
-  const { ddca, usdr, owner, client1, client2 }: any = await loadFixture(deployContracts);
-
-  const _quoteTokenAmount = parseUnits('5000', 8);
-  const _additionalQuoteTokenAmount = parseUnits('5000', 8);
-
-  // Transfer USDR tokens to client1 and client2
-  await usdr.transfer(client1.address, _quoteTokenAmount);
-  await usdr.transfer(client2.address, _quoteTokenAmount);
-
-  const ddcaAddress = await ddca.getAddress();
-
-  // Approve USDR tokens for DDCA from client1 and client2
-  await usdr.connect(client1).approve(ddcaAddress, _quoteTokenAmount);
-  await usdr.connect(client2).approve(ddcaAddress, _quoteTokenAmount);
-
-  // Create DDCA for client1 and client2
-  await ddca.connect(client1).createDDCA(_quoteTokenAmount, _quoteTokenAmount);
-  await ddca.connect(client2).createDDCA(_quoteTokenAmount, _quoteTokenAmount);
-
-  // Transfer USDR tokens to client1 and client2
-  await usdr.transfer(client1.address, _additionalQuoteTokenAmount);
-  await usdr.transfer(client2.address, _additionalQuoteTokenAmount);
-
-  // Top-up DDCA for client1
-  await usdr.connect(client1).approve(ddcaAddress, _additionalQuoteTokenAmount);
-  await ddca.connect(client1).topUp(_additionalQuoteTokenAmount);
-
-  // Top-up DDCA for client2
-  await usdr.connect(client2).approve(ddcaAddress, _additionalQuoteTokenAmount);
-  await ddca.connect(client2).topUp(_additionalQuoteTokenAmount);
-
-  const [client1Base, client1Quote] = await ddca.getClientBalance(client1.address);
-  const [client2Base, client2Quote] = await ddca.getClientBalance(client2.address);
-
-  expect(Number(client1Quote)).to.be.equal(_quoteTokenAmount+_additionalQuoteTokenAmount);
-  expect(Number(client2Quote)).to.be.equal(_quoteTokenAmount+_additionalQuoteTokenAmount);
-  expect(Number(client1Base)).to.be.equal(0);
-  expect(Number(client2Base)).to.be.equal(0);
-
-  await ddca.connect(client1).withdrawQuoteToken(_quoteTokenAmount);
   
-  await ddca.connect(client2).withdrawQuoteToken(_quoteTokenAmount);
+  it('Top-up DDCA for client1 and client2', async function () {
+    const { ddca, usdr, owner, client1, client2 }: any = await loadFixture(deployContracts);
 
-  const [, client1Quote0] = await ddca.getClientBalance(client1.address);
-  const [, client2Quote0] = await ddca.getClientBalance(client2.address);
+    const _quoteTokenAmount = parseUnits('5000', 8);
+    const _additionalQuoteTokenAmount = parseUnits('5000', 8);
+
+    // Transfer USDR tokens to client1 and client2
+    await usdr.transfer(client1.address, _quoteTokenAmount);
+    await usdr.transfer(client2.address, _quoteTokenAmount);
+
+    const ddcaAddress = await ddca.getAddress();
+
+    // Approve USDR tokens for DDCA from client1 and client2
+    await usdr.connect(client1).approve(ddcaAddress, _quoteTokenAmount);
+    await usdr.connect(client2).approve(ddcaAddress, _quoteTokenAmount);
+
+    // Create DDCA for client1 and client2
+    await ddca.connect(client1).createDDCA(_quoteTokenAmount, _quoteTokenAmount);
+    await ddca.connect(client2).createDDCA(_quoteTokenAmount, _quoteTokenAmount);
+
+    // Transfer USDR tokens to client1 and client2
+    await usdr.transfer(client1.address, _additionalQuoteTokenAmount);
+    await usdr.transfer(client2.address, _additionalQuoteTokenAmount);
+
+    // Top-up DDCA for client1
+    await usdr.connect(client1).approve(ddcaAddress, _additionalQuoteTokenAmount);
+    await ddca.connect(client1).topUp(_additionalQuoteTokenAmount);
+
+    // Top-up DDCA for client2
+    await usdr.connect(client2).approve(ddcaAddress, _additionalQuoteTokenAmount);
+    await ddca.connect(client2).topUp(_additionalQuoteTokenAmount);
+
+    const [client1Base, client1Quote] = await ddca.getClientBalance(client1.address);
+    const [client2Base, client2Quote] = await ddca.getClientBalance(client2.address);
+
+    expect(Number(client1Quote)).to.be.equal(_quoteTokenAmount+_additionalQuoteTokenAmount);
+    expect(Number(client2Quote)).to.be.equal(_quoteTokenAmount+_additionalQuoteTokenAmount);
+    expect(Number(client1Base)).to.be.equal(0);
+    expect(Number(client2Base)).to.be.equal(0);
+
+    await ddca.connect(client1).withdrawQuoteToken(_quoteTokenAmount);
+    
+    await ddca.connect(client2).withdrawQuoteToken(_quoteTokenAmount);
+
+    const [, client1Quote0] = await ddca.getClientBalance(client1.address);
+    const [, client2Quote0] = await ddca.getClientBalance(client2.address);
 
 
-  expect(Number(client1Quote0)).to.be.equal(_additionalQuoteTokenAmount)
-  expect(Number(client2Quote0)).to.be.equal(_additionalQuoteTokenAmount)
-});
+    expect(Number(client1Quote0)).to.be.equal(_additionalQuoteTokenAmount)
+    expect(Number(client2Quote0)).to.be.equal(_additionalQuoteTokenAmount)
+  });
   
 });
