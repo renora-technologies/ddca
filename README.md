@@ -20,3 +20,17 @@ yarn test
 ```
 
 
+## Deployed Contrcts:
+
+### DDCA 
+```shell
+0x9c946f49b2c74cC5ACf3c8DD9c4F4E110b82628a
+```
+### Slothx 
+```shell
+0x71fdce8eaab54f1c690fc23ee89cf98b8650fec4
+```
+### USDR 
+```shell
+0xf666826b4a98b3b9c9e6b9378adc327d9ef65d26
+```
