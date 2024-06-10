@@ -175,7 +175,9 @@ contract DDCA is Executor {
      *
      * @param _amount The amount to be deposited
      */
-    function _deposit(uint256 _amount) internal noSwapInProgress returns (bool) {
+    function _deposit(
+        uint256 _amount
+    ) internal noSwapInProgress returns (bool) {
         bool _status;
 
         require(
@@ -197,7 +199,10 @@ contract DDCA is Executor {
         return _status;
     }
 
-    function createDDCA(uint256 _amount, uint256 _lotSize) public noSwapInProgress {
+    function createDDCA(
+        uint256 _amount,
+        uint256 _lotSize
+    ) public noSwapInProgress {
         Node memory _node = nodes[msg.sender];
 
         require(_node.account != msg.sender, "Account already exists.");
@@ -232,7 +237,11 @@ contract DDCA is Executor {
         return _amountsOut[1];
     }
 
-    function _distributeReward(uint256[] memory _amounts, uint256 _swapTotalLotSize, uint256 swapAmount) private {
+    function _distributeReward(
+        uint256[] memory _amounts,
+        uint256 _swapTotalLotSize,
+        uint256 swapAmount
+    ) private {
         uint256 _amountOut = _amounts[1];
         uint256 totalReward = 0;
 
@@ -250,7 +259,8 @@ contract DDCA is Executor {
                 /**
                  * @dev calculating reward for the swap
                  */
-                uint256 reward = (_clientNode.lotSize * _amountOut) / _swapTotalLotSize;
+                uint256 reward = (_clientNode.lotSize * _amountOut) /
+                    _swapTotalLotSize;
 
                 emit LogAmount(reward);
 
@@ -260,19 +270,24 @@ contract DDCA is Executor {
                 _clientNode.baseTokenAmount += reward;
                 _clientNode.totalAmountBought += reward;
                 _clientNode.totalCostPrice += _clientNode.lotSize;
-                _clientNode.avgBoughtPrice = _clientNode.totalCostPrice/_clientNode.totalAmountBought;
-                 totalReward += reward;
+                _clientNode.avgBoughtPrice =
+                    _clientNode.totalCostPrice /
+                    _clientNode.totalAmountBought;
+                totalReward += reward;
                 emit LogAmount(totalReward);
 
                 /**
                  * @dev updating quote token amount
                  */
                 _clientNode.quoteTokenAmount -= _clientNode.lotSize;
-                
+
                 /**
                  * @dev removing the clients lotSize from the totalLotSize
                  */
-                if (_clientNode.quoteTokenAmount == 0 || _clientNode.quoteTokenAmount < _clientNode.lotSize) {
+                if (
+                    _clientNode.quoteTokenAmount == 0 ||
+                    _clientNode.quoteTokenAmount < _clientNode.lotSize
+                ) {
                     _totalLotSize -= _clientNode.lotSize;
                 }
 
@@ -285,13 +300,16 @@ contract DDCA is Executor {
         }
 
         // Ensure totalReward does not exceed the amountOut
-        require(totalReward <= _amountOut, "Total reward exceeds swapped amount");
+        require(
+            totalReward <= _amountOut,
+            "Total reward exceeds swapped amount"
+        );
     }
 
-    function swap() public onlyExecutor lock {
+    function swap(uint256 minAmountOutExpected) public onlyExecutor lock {
         _swapInProgress = true;
 
-        uint256 feeAmount = _totalLotSize * _feesPercent / 100;
+        uint256 feeAmount = (_totalLotSize * _feesPercent) / 100;
         uint256 swapAmount = _totalLotSize - feeAmount;
 
         require(
@@ -299,10 +317,16 @@ contract DDCA is Executor {
             "Failed to approve router."
         );
 
+        uint256 minAmountOutFromRouter = _getMinAmountOut(swapAmount);
+        require(
+            minAmountOutFromRouter >= minAmountOutExpected,
+            "Min amount out from router is less than expected"
+        );
+
         try
             _router.swapExactTokensForTokens(
                 swapAmount,
-                _getMinAmountOut(swapAmount),
+                minAmountOutFromRouter,
                 _getSwapPath(),
                 address(this),
                 block.timestamp
@@ -324,7 +348,9 @@ contract DDCA is Executor {
      *
      * @param _amount The amount to be withdrawn
      */
-    function withdrawBaseToken(uint256 _amount) public noSwapInProgress returns (bool) {
+    function withdrawBaseToken(
+        uint256 _amount
+    ) public noSwapInProgress returns (bool) {
         Node storage clientNode = nodes[msg.sender];
 
         uint256 tokenBalance = clientNode.baseTokenAmount;
@@ -348,7 +374,9 @@ contract DDCA is Executor {
      *
      * @param _amount The amount to be withdrawn
      */
-    function withdrawQuoteToken(uint256 _amount) public noSwapInProgress returns (bool) {
+    function withdrawQuoteToken(
+        uint256 _amount
+    ) public noSwapInProgress returns (bool) {
         Node storage clientNode = nodes[msg.sender];
 
         uint256 tokenBalance = clientNode.quoteTokenAmount;
@@ -374,7 +402,9 @@ contract DDCA is Executor {
 
     function _removeClientIfZeroBalance(address _client) internal {
         Node memory clientNode = nodes[_client];
-        if (clientNode.baseTokenAmount == 0 && clientNode.quoteTokenAmount == 0) {
+        if (
+            clientNode.baseTokenAmount == 0 && clientNode.quoteTokenAmount == 0
+        ) {
             // Remove client from the clients array
             for (uint i = 0; i < clients.length; i++) {
                 if (clients[i] == _client) {
@@ -396,8 +426,14 @@ contract DDCA is Executor {
     function updateLotSize(uint256 _newLotSize) public noSwapInProgress {
         Node storage clientNode = nodes[msg.sender];
         require(clientNode.account == msg.sender, "Account does not exist.");
-        require(clientNode.quoteTokenAmount >= _newLotSize, "New lot size is greater than quote token amount.");
-        require(clientNode.quoteTokenAmount % _newLotSize == 0, "Quote token amount must be a multiple of the new lot size.");
+        require(
+            clientNode.quoteTokenAmount >= _newLotSize,
+            "New lot size is greater than quote token amount."
+        );
+        require(
+            clientNode.quoteTokenAmount % _newLotSize == 0,
+            "Quote token amount must be a multiple of the new lot size."
+        );
 
         _totalLotSize = _totalLotSize - clientNode.lotSize + _newLotSize;
         clientNode.lotSize = _newLotSize;
@@ -411,7 +447,10 @@ contract DDCA is Executor {
     function topUp(uint256 _amount) public noSwapInProgress {
         Node storage clientNode = nodes[msg.sender];
         require(clientNode.account == msg.sender, "Account does not exist.");
-        require(_amount % clientNode.lotSize == 0, "Top-up amount must be a multiple of the lot size.");
+        require(
+            _amount % clientNode.lotSize == 0,
+            "Top-up amount must be a multiple of the lot size."
+        );
 
         bool _status = _deposit(_amount);
 
