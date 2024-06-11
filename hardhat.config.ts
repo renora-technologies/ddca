@@ -1,6 +1,8 @@
 import { HardhatUserConfig, vars } from 'hardhat/config';
+
 import '@nomicfoundation/hardhat-toolbox';
 import '@nomicfoundation/hardhat-ignition-ethers';
+import '@nomicfoundation/hardhat-verify';
 
 const ETHERSCAN_API_KEY = vars.get('ETHERSCAN_API_KEY');
 const INFURA_API_KEY = vars.get('INFURA_API_KEY');
@@ -24,11 +26,25 @@ const config: HardhatUserConfig = {
       chainId: 128123,
     },
   },
-  // etherscan: {
-  //   apiKey: {
-  //     sepolia: ETHERSCAN_API_KEY,
-  //   },
-  // },
+  etherscan: {
+    apiKey: {
+      sepolia: '', //ETHERSCAN_API_KEY,
+      ['etherlink-test']: '',
+    },
+    customChains: [
+      {
+        network: 'etherlink-test',
+        chainId: 128123,
+        urls: {
+          apiURL: 'https://testnet-explorer.etherlink.com/api',
+          browserURL: 'https://testnet-explorer.etherlink.com',
+        },
+      },
+    ],
+  },
+  sourcify: {
+    enabled: false,
+  },
   solidity: {
     version: '0.8.24',
     settings: {
@@ -46,7 +62,7 @@ const config: HardhatUserConfig = {
   },
   mocha: {
     timeout: 20000, // Increase timeout if necessary
-    reporter: "spec" // Use the "spec" reporter for detailed output
+    reporter: 'spec', // Use the "spec" reporter for detailed output
   },
   gasReporter: {
     enabled: true,
