@@ -312,7 +312,7 @@ contract DDCA is Executor {
         uint256 feeAmount = (_totalLotSize * _feesPercent) / 100;
         uint256 swapAmount = _totalLotSize - feeAmount;
 
-        uint256 _fMinAmountOutExpected =  swapAmount / toleratedSlippagePrice;
+        uint256 _fMinAmountOutExpected = swapAmount / toleratedSlippagePrice;
 
         require(
             quoteToken.approve(address(_router), swapAmount),
