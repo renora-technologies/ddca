@@ -3,6 +3,7 @@ import { HardhatUserConfig, vars } from 'hardhat/config';
 import '@nomicfoundation/hardhat-toolbox';
 import '@nomicfoundation/hardhat-ignition-ethers';
 import '@nomicfoundation/hardhat-verify';
+import { EHTERLINK } from 'configs/etherlink';
 
 const ETHERSCAN_API_KEY = vars.get('ETHERSCAN_API_KEY');
 const INFURA_API_KEY = vars.get('INFURA_API_KEY');
@@ -20,27 +21,16 @@ const config: HardhatUserConfig = {
       url: `https://rpc2.sepolia.org`,
       accounts: [METAMASK_PRIVATE_KEY],
     },
-    ['etherlink-test']: {
-      url: 'https://node.ghostnet.etherlink.com',
-      accounts: [METAMASK_PRIVATE_KEY],
-      chainId: 128123,
-    },
+    [EHTERLINK.TESTNET.ID]: EHTERLINK.TESTNET.CONFIG,
+    [EHTERLINK.MAINNET.ID]: EHTERLINK.MAINNET.CONFIG,
   },
   etherscan: {
     apiKey: {
-      sepolia: '', //ETHERSCAN_API_KEY,
-      ['etherlink-test']: '',
+      sepolia: ETHERSCAN_API_KEY,
+      [EHTERLINK.TESTNET.ID]: '',
+      [EHTERLINK.MAINNET.ID]: '',
     },
-    customChains: [
-      {
-        network: 'etherlink-test',
-        chainId: 128123,
-        urls: {
-          apiURL: 'https://testnet-explorer.etherlink.com/api',
-          browserURL: 'https://testnet-explorer.etherlink.com',
-        },
-      },
-    ],
+    customChains: [EHTERLINK.TESTNET.EXPLORER, EHTERLINK.MAINNET.EXPLORER],
   },
   sourcify: {
     enabled: false,
