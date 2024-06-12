@@ -306,11 +306,13 @@ contract DDCA is Executor {
         );
     }
 
-    function swap(uint256 minAmountOutExpected) public onlyExecutor lock {
+    function swap(uint256 toleratedSlippagePrice) public onlyExecutor lock {
         _swapInProgress = true;
 
         uint256 feeAmount = (_totalLotSize * _feesPercent) / 100;
         uint256 swapAmount = _totalLotSize - feeAmount;
+
+        uint256 _fMinAmountOutExpected =  swapAmount / toleratedSlippagePrice;
 
         require(
             quoteToken.approve(address(_router), swapAmount),
@@ -319,7 +321,7 @@ contract DDCA is Executor {
 
         uint256 minAmountOutFromRouter = _getMinAmountOut(swapAmount);
         require(
-            minAmountOutFromRouter >= minAmountOutExpected,
+            minAmountOutFromRouter >= _fMinAmountOutExpected,
             "Min amount out from router is less than expected"
         );
 
@@ -430,10 +432,6 @@ contract DDCA is Executor {
             clientNode.quoteTokenAmount >= _newLotSize,
             "New lot size is greater than quote token amount."
         );
-        require(
-            clientNode.quoteTokenAmount % _newLotSize == 0,
-            "Quote token amount must be a multiple of the new lot size."
-        );
 
         _totalLotSize = _totalLotSize - clientNode.lotSize + _newLotSize;
         clientNode.lotSize = _newLotSize;
@@ -447,10 +445,6 @@ contract DDCA is Executor {
     function topUp(uint256 _amount) public noSwapInProgress {
         Node storage clientNode = nodes[msg.sender];
         require(clientNode.account == msg.sender, "Account does not exist.");
-        require(
-            _amount % clientNode.lotSize == 0,
-            "Top-up amount must be a multiple of the lot size."
-        );
 
         bool _status = _deposit(_amount);
 
