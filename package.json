@@ -9,7 +9,9 @@
   "scripts": {
     "build": "hardhat clean && yarn hardhat compile",
     "test:light": "hardhat test",
-    "test": "hardhat test --network hardhat"
+    "test": "hardhat test --network hardhat",
+    "deploy:test": "hardhat ignition deploy ./ignition/modules/DDCA.ts --network etherlink.testnet --verify",
+    "deploy" : "hardhat ignition deploy ./ignition/modules/DDCA.ts --network etherlink.mainnet --verify"
   },
   "author": "Sayan Bose <sayannbose@gmail.com>",
   "license": "MIT",
