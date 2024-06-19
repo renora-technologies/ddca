@@ -3,7 +3,8 @@ import { HardhatUserConfig, vars } from 'hardhat/config';
 import '@nomicfoundation/hardhat-toolbox';
 import '@nomicfoundation/hardhat-ignition-ethers';
 import '@nomicfoundation/hardhat-verify';
-import { EHTERLINK } from 'configs/etherlink';
+
+import { EHTERLINK } from './configs/etherlink';
 
 const ETHERSCAN_API_KEY = vars.get('ETHERSCAN_API_KEY');
 const INFURA_API_KEY = vars.get('INFURA_API_KEY');
