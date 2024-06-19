@@ -48,8 +48,7 @@ contract DDCA is Executor {
     bool private _isLocked = false;
     bool private _swapInProgress = false;
 
-    ITachySwapRouter02 public immutable _router =
-        ITachySwapRouter02(0x789298Cf1C48fC6bb02DA71bBDc3A59d1A07b4c6);
+    ITachySwapRouter02 public immutable _router;
 
     /**
      * @notice The token which the user will receive
@@ -66,9 +65,15 @@ contract DDCA is Executor {
      * @param _baseToken the base currency
      * @param _quoteToken the quote currency
      */
-    constructor(address _baseToken, address _quoteToken) Executor(msg.sender) {
+    constructor(
+        address _baseToken,
+        address _quoteToken,
+        address _routerAddress
+    ) Executor(msg.sender) {
         baseToken = IERC20(_baseToken);
         quoteToken = IERC20(_quoteToken);
+
+        _router = ITachySwapRouter02(_routerAddress);
     }
 
     modifier lock() {
