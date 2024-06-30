@@ -4,14 +4,12 @@ pragma solidity ^0.8.0;
 
 import "hardhat/console.sol";
 
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+// import {IERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 import "./Executor.sol";
 import "../interfaces/ITachySwapRouter02.sol";
-
-// XTokenV2Module#XTokenV2 - 0x6B4f550d3a92068b9A72a90c57A43f3ae2Ed1973
-// USDRTokenModule#USDRToken - 0xb8038E962fB3C52F817c46d2E0B22aB58a1Bd370
-// SlothTokenModule#SlothToken - 0x86D233D2Bb48A1017b597EC03Ed2115018E65FD1
+import "../interfaces/IERC20.sol";
+import "../libraries/MathUtils.sol";
 
 /**
  * @title DDCA
@@ -25,7 +23,11 @@ contract DDCA is Executor {
     event Deposit(bool status, uint256 amount, address client);
     event Withdraw(bool status, uint256 amount, address client);
 
-    event Swapped(uint[] amounts);
+    event SwapInit(uint256 price, uint256 lotSize, uint256 timestamp);
+    event SwapFailure(uint256 price, string message);
+    event SwapSuccess(uint256 amountIn, uint256 amountOut);
+
+    // event Swapped(uint[] amounts);
 
     struct Node {
         address account;
@@ -270,14 +272,41 @@ contract DDCA is Executor {
                 emit LogAmount(reward);
 
                 /**
+                 * @dev calculating fees charged for client
+                 */
+                uint256 clientFee = (_clientNode.lotSize * _feesPercent) / 100;
+
+                /**
+                 * @dev updating total fees charged for client
+                 */
+                _clientNode.totalFees += clientFee;
+
+                /**
                  * @dev updating base token amount
                  */
                 _clientNode.baseTokenAmount += reward;
+
+                /**
+                 * @dev updating total base token amount bought
+                 */
                 _clientNode.totalAmountBought += reward;
-                _clientNode.totalCostPrice += _clientNode.lotSize;
+
+                /**
+                 * @dev updating total cost
+                 * total cost = sum of all (lotsize - fees)
+                 */
+                _clientNode.totalCostPrice += _clientNode.lotSize - clientFee;
+
+                /**
+                 * @dev average bought price is total cost / total amt bought
+                 */
                 _clientNode.avgBoughtPrice =
-                    _clientNode.totalCostPrice /
-                    _clientNode.totalAmountBought;
+                    (_clientNode.totalCostPrice /
+                        _clientNode.totalAmountBought) *
+                    MathUtils.exponent(
+                        baseToken.decimals() - quoteToken.decimals()
+                    );
+
                 totalReward += reward;
                 emit LogAmount(totalReward);
 
@@ -295,12 +324,6 @@ contract DDCA is Executor {
                 ) {
                     _totalLotSize -= _clientNode.lotSize;
                 }
-
-                /**
-                 * @dev updating total fees charged
-                 */
-                uint256 clientFee = (_clientNode.lotSize * _feesPercent) / 100;
-                _clientNode.totalFees += clientFee;
             }
         }
 
@@ -319,16 +342,23 @@ contract DDCA is Executor {
 
         uint256 _fMinAmountOutExpected = swapAmount / toleratedSlippagePrice;
 
+        emit SwapInit(toleratedSlippagePrice, _totalLotSize, block.timestamp);
+
         require(
             quoteToken.approve(address(_router), swapAmount),
             "Failed to approve router."
         );
 
         uint256 minAmountOutFromRouter = _getMinAmountOut(swapAmount);
-        require(
-            minAmountOutFromRouter >= _fMinAmountOutExpected,
-            "Min amount out from router is less than expected"
-        );
+
+        if (minAmountOutFromRouter < _fMinAmountOutExpected) {
+            emit SwapFailure(
+                toleratedSlippagePrice,
+                "Min amount out from router is less than expected"
+            );
+
+            revert("Min amount out from router is less than expected");
+        }
 
         try
             _router.swapExactTokensForTokens(
@@ -342,9 +372,10 @@ contract DDCA is Executor {
             _distributeReward(_amounts, _totalLotSize, swapAmount);
 
             _totalFeesCollected += feeAmount;
-            emit Swapped(_amounts);
+
+            emit SwapSuccess(_amounts[0], _amounts[1]);
         } catch Error(string memory reason) {
-            emit Log(reason);
+            emit SwapFailure(toleratedSlippagePrice, reason);
         }
 
         _swapInProgress = false;
