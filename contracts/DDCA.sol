@@ -2,10 +2,6 @@
 
 pragma solidity ^0.8.0;
 
-import "hardhat/console.sol";
-
-// import {IERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-
 import "./Executor.sol";
 import "../interfaces/ITachySwapRouter02.sol";
 import "../interfaces/IERC20.sol";
@@ -16,10 +12,6 @@ import "../libraries/MathUtils.sol";
  * @notice Dollar-Cost Averaging contract for automated trading
  */
 contract DDCA is Executor {
-    event Log(string message);
-    event LogAddress(address add);
-    event LogAmount(uint256 amount);
-
     event Deposit(bool status, uint256 amount, address client);
     event Withdraw(bool status, uint256 amount, address client);
 
@@ -27,7 +19,12 @@ contract DDCA is Executor {
     event SwapFailure(uint256 price, string message);
     event SwapSuccess(uint256 amountIn, uint256 amountOut);
 
-    // event Swapped(uint[] amounts);
+    event InsufficientSwapAmount(
+        string message,
+        uint256 minAmountOut,
+        uint256 minAmountReq,
+        uint256 price
+    );
 
     struct Node {
         address account;
@@ -45,7 +42,7 @@ contract DDCA is Executor {
 
     uint256 private _totalLotSize = 0;
     uint256 private _totalFeesCollected = 0;
-    uint256 private _feesPercent = 1; // default 1%
+    uint256 private _feesPercent = 1000000; // default 1%
 
     bool private _isLocked = false;
     bool private _swapInProgress = false;
@@ -76,6 +73,16 @@ contract DDCA is Executor {
         quoteToken = IERC20(_quoteToken);
 
         _router = ITachySwapRouter02(_routerAddress);
+    }
+
+    function isETH(address _address) internal view returns (bool) {
+        // return _address == _router.WETH();
+        /**
+         * On testnet, the TachySwapRouter02 has been initialized with
+         * _WETH address as the WXTZ address. As a result the WXTZ is
+         * being treated as ETH. This needs to be changed in mainnet.
+         */
+        return false;
     }
 
     modifier lock() {
@@ -252,15 +259,9 @@ contract DDCA is Executor {
         uint256 _amountOut = _amounts[1];
         uint256 totalReward = 0;
 
-        emit Log("Distributing rewards");
-        emit LogAmount(_amountOut);
-
         for (uint i = 0; i < clients.length; i++) {
             address _client = clients[i];
             Node storage _clientNode = nodes[_client];
-
-            emit LogAddress(_client);
-            emit LogAmount(_clientNode.quoteTokenAmount);
 
             if (_clientNode.quoteTokenAmount >= _clientNode.lotSize) {
                 /**
@@ -269,12 +270,13 @@ contract DDCA is Executor {
                 uint256 reward = (_clientNode.lotSize * _amountOut) /
                     _swapTotalLotSize;
 
-                emit LogAmount(reward);
-
                 /**
                  * @dev calculating fees charged for client
+                 * We are defining fees as x * 10^6, thats why we are
+                 * dividing by 100 * 10^6
                  */
-                uint256 clientFee = (_clientNode.lotSize * _feesPercent) / 100;
+                uint256 clientFee = (_clientNode.lotSize * _feesPercent) /
+                    (100 * 1000000);
 
                 /**
                  * @dev updating total fees charged for client
@@ -300,15 +302,11 @@ contract DDCA is Executor {
                 /**
                  * @dev average bought price is total cost / total amt bought
                  */
-                _clientNode.avgBoughtPrice =
-                    (_clientNode.totalCostPrice /
-                        _clientNode.totalAmountBought) *
-                    MathUtils.exponent(
-                        baseToken.decimals() - quoteToken.decimals()
-                    );
+                _clientNode.avgBoughtPrice = ((_clientNode.totalCostPrice *
+                    MathUtils.exponent(baseToken.decimals())) /
+                    _clientNode.totalAmountBought);
 
                 totalReward += reward;
-                emit LogAmount(totalReward);
 
                 /**
                  * @dev updating quote token amount
@@ -337,10 +335,15 @@ contract DDCA is Executor {
     function swap(uint256 toleratedSlippagePrice) public onlyExecutor lock {
         _swapInProgress = true;
 
-        uint256 feeAmount = (_totalLotSize * _feesPercent) / 100;
+        uint256 feeAmount = (_totalLotSize * _feesPercent) / (100 * 1000000);
         uint256 swapAmount = _totalLotSize - feeAmount;
 
-        uint256 _fMinAmountOutExpected = swapAmount / toleratedSlippagePrice;
+        /*
+         * Converting user input into uint256 form
+         * For e. g. 0.001 BTC -> 0.001 * 10^18 BTC
+         */
+        uint256 _fMinAmountOutExpected = ((swapAmount *
+            MathUtils.exponent(baseToken.decimals())) / toleratedSlippagePrice);
 
         emit SwapInit(toleratedSlippagePrice, _totalLotSize, block.timestamp);
 
@@ -352,33 +355,81 @@ contract DDCA is Executor {
         uint256 minAmountOutFromRouter = _getMinAmountOut(swapAmount);
 
         if (minAmountOutFromRouter < _fMinAmountOutExpected) {
-            emit SwapFailure(
-                toleratedSlippagePrice,
-                "Min amount out from router is less than expected"
+            emit InsufficientSwapAmount(
+                "Min amount out from router is less than expected",
+                minAmountOutFromRouter,
+                _fMinAmountOutExpected,
+                toleratedSlippagePrice
             );
-
-            revert("Min amount out from router is less than expected");
         }
 
-        try
-            _router.swapExactTokensForTokens(
+        if (isETH(address(baseToken))) {
+            _swapETH(
                 swapAmount,
                 minAmountOutFromRouter,
+                toleratedSlippagePrice,
+                feeAmount
+            );
+        } else {
+            _swapToken(
+                swapAmount,
+                minAmountOutFromRouter,
+                toleratedSlippagePrice,
+                feeAmount
+            );
+        }
+
+        _swapInProgress = false;
+    }
+
+    function _swapToken(
+        uint256 _swapAmount,
+        uint256 _minAmountOutFromRouter,
+        uint256 _toleratedSlippagePrice,
+        uint256 _feeAmount
+    ) private {
+        try
+            _router.swapExactTokensForTokens(
+                _swapAmount,
+                _minAmountOutFromRouter,
                 _getSwapPath(),
                 address(this),
                 block.timestamp
             )
         returns (uint[] memory _amounts) {
-            _distributeReward(_amounts, _totalLotSize, swapAmount);
+            _distributeReward(_amounts, _totalLotSize, _swapAmount);
 
-            _totalFeesCollected += feeAmount;
+            _totalFeesCollected += _feeAmount;
 
             emit SwapSuccess(_amounts[0], _amounts[1]);
         } catch Error(string memory reason) {
-            emit SwapFailure(toleratedSlippagePrice, reason);
+            emit SwapFailure(_toleratedSlippagePrice, reason);
         }
+    }
 
-        _swapInProgress = false;
+    function _swapETH(
+        uint256 _swapAmount,
+        uint256 _minAmountOutFromRouter,
+        uint256 _toleratedSlippagePrice,
+        uint256 _feeAmount
+    ) private {
+        try
+            _router.swapExactTokensForETH(
+                _swapAmount,
+                _minAmountOutFromRouter,
+                _getSwapPath(),
+                address(this),
+                block.timestamp
+            )
+        returns (uint[] memory _amounts) {
+            _distributeReward(_amounts, _totalLotSize, _swapAmount);
+
+            _totalFeesCollected += _feeAmount;
+
+            emit SwapSuccess(_amounts[0], _amounts[1]);
+        } catch Error(string memory reason) {
+            emit SwapFailure(_toleratedSlippagePrice, reason);
+        }
     }
 
     /**
@@ -394,7 +445,6 @@ contract DDCA is Executor {
         uint256 tokenBalance = clientNode.baseTokenAmount;
 
         require(_amount <= tokenBalance, "Insufficient funds to withdraw");
-
         bool _status = baseToken.transfer(msg.sender, _amount);
 
         if (_status == true) {
@@ -495,7 +545,11 @@ contract DDCA is Executor {
      * @param newFeesPercent The new fees percent
      */
     function updateFeesPercent(uint256 newFeesPercent) public onlyExecutor {
-        require(newFeesPercent <= 100, "Fees percent cannot exceed 100");
+        require(
+            newFeesPercent <= 100 * 1000000,
+            "Fees percent cannot exceed 100"
+        );
+
         _feesPercent = newFeesPercent;
     }
 
@@ -511,5 +565,20 @@ contract DDCA is Executor {
         require(_status, "Withdrawal failed");
 
         _totalFeesCollected -= amount;
+    }
+
+    function getAllClientNodes()
+        public
+        view
+        onlyExecutor
+        returns (Node[] memory)
+    {
+        Node[] memory clientsData = new Node[](clients.length);
+
+        for (uint i = 0; i < clients.length; i++) {
+            clientsData[i] = nodes[clients[i]];
+        }
+
+        return clientsData;
     }
 }
