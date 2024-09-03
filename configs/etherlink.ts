@@ -2,8 +2,8 @@ import { vars } from 'hardhat/config';
 
 const METAMASK_PRIVATE_KEY = vars.get('METAMASK_PRIVATE_KEY');
 
-export const TESTNET_CHAIN_ID = 128123;
-export const MAINNET_CHAIN_ID = 42793;
+export const TESTNET_CHAIN_ID = 128_123;
+export const MAINNET_CHAIN_ID = 42_793;
 
 export const EHTERLINK = {
   TESTNET: {
