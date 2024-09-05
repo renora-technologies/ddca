@@ -15,6 +15,12 @@ import {ITachySwapRouter02} from "../interfaces/ITachySwapRouter02.sol";
 contract DDCAEtherlink is ERC20DDCAManager {
     ITachySwapRouter02 private immutable _router;
 
+    struct TachySwapInput {
+        uint256 swapAmount;
+        uint256 minAmountOutFromRouter;
+        uint256 feeAmount;
+    }
+
     /**
      * @dev setting the base and the quote curency (trading pair) of the contract
      * @param _baseToken the base currency
@@ -50,62 +56,94 @@ contract DDCAEtherlink is ERC20DDCAManager {
 
     function purchaseDips(
         uint256 toleratedSlippagePrice
-    ) public onlyOwner whenNotPaused {
+    ) public onlyOwner lock {
         _swapInProgress = true;
 
-        uint256 feeAmount = (_totalLotSize * _feesPercent) / 100;
-        uint256 swapAmount = _totalLotSize - feeAmount;
+        if (_totalLotSize <= 0) {
+            revert ValidationError({message: "Not enough funds to swap"});
+        }
 
-        uint256 _minAmountOutExpected = ((swapAmount *
-            MathUtils.exponent(baseToken.decimals())) / toleratedSlippagePrice);
-
-        emit PurchaseDipAt(
-            toleratedSlippagePrice,
-            _totalLotSize,
-            _minAmountOutExpected,
-            block.timestamp
+        PurchaseDipInputs memory purchaseDipInputs = _getPurchaseDipInputs(
+            toleratedSlippagePrice
         );
 
         TransferHelper.safeApprove(
             address(quoteToken),
             address(_router),
-            swapAmount
+            purchaseDipInputs.swapAmount
         );
 
-        uint256 minAmountOutFromRouter = _getMinAmountOut(swapAmount);
+        uint256 minAmountOutFromRouter = _getMinAmountOut(
+            purchaseDipInputs.swapAmount
+        );
 
-        if (minAmountOutFromRouter < _minAmountOutExpected) {
+        if (minAmountOutFromRouter < purchaseDipInputs.minAmountOutExpected) {
             revert InsufficientLiquidity({
-                amountIn: swapAmount,
+                amountIn: purchaseDipInputs.swapAmount,
                 minAmountOut: minAmountOutFromRouter,
-                minAmountOutExpected: _minAmountOutExpected,
+                minAmountOutExpected: purchaseDipInputs.minAmountOutExpected,
                 toleratedSlippagePrice: toleratedSlippagePrice
             });
         }
 
+        TachySwapInput memory params = TachySwapInput({
+            swapAmount: purchaseDipInputs.swapAmount,
+            minAmountOutFromRouter: minAmountOutFromRouter,
+            feeAmount: purchaseDipInputs.feeAmount
+        });
+
+        if (address(baseToken) == _router.WETH()) {
+            _swapWXTZ(params);
+        } else {
+            _swapERC20Token(params);
+        }
+
+        _swapInProgress = false;
+    }
+
+    function _swapERC20Token(TachySwapInput memory _params) private {
         try
             _router.swapExactTokensForTokens(
-                swapAmount,
-                minAmountOutFromRouter,
+                _params.swapAmount,
+                _params.minAmountOutFromRouter,
                 _getSwapPath(),
                 address(this),
                 block.timestamp
             )
         returns (uint[] memory _amounts) {
-            _distributeReward(_amounts);
-
-            _totalFeesCollected += feeAmount;
-
-            emit PurchaseDipOk(
+            _onPurchaseDip(
                 _amounts[0],
                 _amounts[1],
-                _minAmountOutExpected,
-                toleratedSlippagePrice
+                _params.minAmountOutFromRouter,
+                _params.feeAmount
             );
-        } catch Error(string memory reason) {
-            revert DexError({message: reason});
+        } catch (bytes memory reason) {
+            emit DexError(reason);
         }
+    }
 
-        _swapInProgress = false;
+    function _swapWXTZ(TachySwapInput memory _params) private {
+        /**
+         * @dev In TachySwap router, calling the WETH() function
+         * will return the address of WXTZ.
+         */
+        try
+            _router.swapExactTokensForETH(
+                _params.swapAmount,
+                _params.minAmountOutFromRouter,
+                _getSwapPath(),
+                address(this),
+                block.timestamp
+            )
+        returns (uint[] memory _amounts) {
+            _onPurchaseDip(
+                _amounts[0],
+                _amounts[1],
+                _params.minAmountOutFromRouter,
+                _params.feeAmount
+            );
+        } catch (bytes memory reason) {
+            emit DexError(reason);
+        }
     }
 }
