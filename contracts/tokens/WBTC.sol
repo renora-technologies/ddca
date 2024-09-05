@@ -11,7 +11,7 @@ contract WBTC is ERC20 {
     uint256 private _totalSupply = 10000000000000000000000000000;
 
     constructor() ERC20("WBTC Renora", "WBTC") {
-        _mint(msg.sender, 1000000 * 10 ** uint256(decimals()));
+        _mint(msg.sender, 10000000000 * 10 ** uint256(decimals()));
     }
 
     function decimals() public pure override returns (uint8) {
