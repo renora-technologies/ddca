@@ -18,8 +18,8 @@ export const EHTERLINK = {
       network: 'etherlink.testnet',
       chainId: TESTNET_CHAIN_ID,
       urls: {
-        apiURL: 'https://testnet-explorer.etherlink.com/api',
-        browserURL: 'https://testnet-explorer.etherlink.com',
+        apiURL: 'https://testnet.explorer.etherlink.com/api',
+        browserURL: 'https://testnet.explorer.etherlink.com',
       },
     },
   },
