@@ -5,8 +5,8 @@ pragma solidity ^0.8.0;
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
-import "../interfaces/IERC20.sol";
-import "../../libraries/MathUtils.sol";
+import {IERC20} from "../interfaces/IERC20.sol";
+import {MathUtils} from "../libraries/MathUtils.sol";
 
 /**
  * @title DDCA
@@ -16,18 +16,12 @@ contract ERC20DDCAManager is Ownable, Pausable {
     event Deposit(bool status, address token, uint256 amount, address client);
     event Withdraw(bool status, address token, uint256 amount, address client);
 
-    event PurchaseDipAt(
-        uint256 price,
-        uint256 amountIn,
-        uint256 minAmountOut,
-        uint256 timestamp
-    );
     event PurchaseDipOk(
         uint256 amountIn,
         uint256 amountOut,
-        uint256 minAmountOutExpected,
-        uint256 toleratedSlippagePrice
+        uint256 amountSubmitted
     );
+    event DexError(bytes message);
 
     error InsufficientLiquidity(
         uint256 amountIn,
@@ -36,14 +30,7 @@ contract ERC20DDCAManager is Ownable, Pausable {
         uint256 toleratedSlippagePrice
     );
     error InsufficientBalance(string token, uint256 balance, uint256 amount);
-    error InsufficientAllowance(
-        string token,
-        uint256 allowance,
-        uint256 amount
-    );
-    error DexError(string message);
     error ValidationError(string message);
-    error InvalidToken(address token);
 
     struct Node {
         address account;
@@ -54,6 +41,12 @@ contract ERC20DDCAManager is Ownable, Pausable {
         uint256 avgBoughtPrice;
         uint256 totalFees;
         uint256 lotSize;
+    }
+
+    struct PurchaseDipInputs {
+        uint256 feeAmount;
+        uint256 swapAmount;
+        uint256 minAmountOutExpected;
     }
 
     /**
@@ -71,21 +64,22 @@ contract ERC20DDCAManager is Ownable, Pausable {
     /**
      * @dev calculating fees charged for client
      *
-     * For e.g fees = 0.1%
-     * Fees charged for deploying X amount = X * (0.1 / 100)
-     * = X / 1000
+     * For e.g fees = 0.2% on 100 USDT
+     * Fees charged for deploying X amount = 100 * 10^6 * (0.2 * 10^4 / 100 * 10^4)
+     * = (100 * 10^6 * 2000/ 10^6) = 200000 = 0.2 USDT = 20 cents
      *
-     * We are dividing the amount by 1000, because the X amount
-     * in solidity is of the order 10^6.
+     * Since Solidity deals with integers, you will work with fixed-point arithmetic.
+     * To avoid precision issues, use a large integer representation.
+     * For example, to work with percentages, we scale up by a factor of 10000.
      *
      * Similarly all fees percent needs to be defined as (y/100)
      * 0.05%    -> 500
-     * 0.1%     -> 1000
+     * 0.2%     -> 2000
      * 0.3%     -> 3000
      */
-    uint256 internal _feesPercent = 1000; // default 0.1%
+    uint256 public feesPercent = 2000; // default 0.2%
 
-    bool public _isLocked = false;
+    bool internal _isLocked = false;
     bool internal _swapInProgress = false;
 
     mapping(address => Node) private nodes;
@@ -313,12 +307,54 @@ contract ERC20DDCAManager is Ownable, Pausable {
         );
     }
 
-    function _distributeReward(uint256[] memory _amounts) internal {
+    function _getPurchaseDipInputs(
+        uint256 toleratedSlippagePrice
+    ) internal view returns (PurchaseDipInputs memory) {
+        uint256 _feeAmount = (_totalLotSize * feesPercent) /
+            MathUtils.exponent(6);
+        uint256 _swapAmount = _totalLotSize - _feeAmount;
+
+        uint256 _minAmountOutExpected = ((_swapAmount *
+            MathUtils.exponent(baseToken.decimals())) / toleratedSlippagePrice);
+
+        PurchaseDipInputs memory params = PurchaseDipInputs({
+            feeAmount: _feeAmount,
+            swapAmount: _swapAmount,
+            minAmountOutExpected: _minAmountOutExpected
+        });
+
+        return params;
+    }
+
+    function _onPurchaseDip(
+        uint256 _amountIn,
+        uint256 _amountOut,
+        uint256 _amountSubmitted,
+        uint256 _feeAmount
+    ) internal {
+        _distributeReward(_amountIn, _amountOut);
+
+        _totalFeesCollected += _feeAmount;
+
+        emit PurchaseDipOk(_amountIn, _amountOut, _amountSubmitted);
+    }
+
+    /**
+     * @notice Function to distribute rewards among clients
+     * after completing the batch swap
+     *
+     * @dev It is an internal function, for testing we need to
+     * change it to public. After that we need to change it
+     * back.
+     *
+     * @param _amountIn The total amount sent to the swap
+     * @param _amountOut The total amount of token received from the swap
+     */
+    function _distributeReward(uint256 _amountIn, uint256 _amountOut) internal {
         uint256 totalReward = 0;
 
         for (uint i = 0; i < clients.length; i++) {
-            address _client = clients[i];
-            Node storage _clientNode = nodes[_client];
+            Node storage _clientNode = nodes[clients[i]];
 
             if (_clientNode.quoteTokenAmount >= _clientNode.lotSize) {
                 /**
@@ -327,14 +363,15 @@ contract ERC20DDCAManager is Ownable, Pausable {
                  * are only dividing the amount by the the fees
                  * percent.
                  */
-                uint256 _clientFee = _clientNode.lotSize / _feesPercent;
+                uint256 _clientFee = (_clientNode.lotSize * feesPercent) /
+                    MathUtils.exponent(6);
 
                 /**
                  * @dev calculating reward for the swap
                  * reward = ((lot_size - fee) / (swapped amount/amount in)) * total amount received
                  */
                 uint256 reward = ((_clientNode.lotSize - _clientFee) *
-                    _amounts[1]) / _amounts[0];
+                    _amountOut) / _amountIn;
 
                 /**
                  * @dev updating total fees charged for client
@@ -384,10 +421,11 @@ contract ERC20DDCAManager is Ownable, Pausable {
         }
 
         // Ensure totalReward does not exceed the amountOut
-        require(
-            totalReward <= _amounts[1],
-            "Total reward exceeds swapped amount out"
-        );
+        if (totalReward > _amountOut) {
+            revert ValidationError({
+                message: "Total reward exceeds swapped amount out"
+            });
+        }
     }
 
     /**
@@ -396,20 +434,14 @@ contract ERC20DDCAManager is Ownable, Pausable {
      * @param _token The token to be withdrawn
      * @param _amount The amount of the token to be withdrawn
      */
-    function withdraw(address _token, uint256 _amount) public returns (bool) {
-        bool _status = false;
-
+    function withdraw(address _token, uint256 _amount) public {
         if (_token == address(baseToken)) {
-            _status = _withdrawBaseToken(_amount);
+            _withdrawBaseToken(_amount);
         } else if (_token == address(quoteToken)) {
-            _status = _withdrawQuoteToken(_amount);
+            _withdrawQuoteToken(_amount);
         } else {
             revert ValidationError({message: "Invalid token address"});
         }
-
-        emit Withdraw(_status, _token, _amount, msg.sender);
-
-        return _status;
     }
 
     /**
@@ -417,9 +449,7 @@ contract ERC20DDCAManager is Ownable, Pausable {
      *
      * @param _amount The amount to be withdrawn
      */
-    function _withdrawBaseToken(
-        uint256 _amount
-    ) private noSwapInProgress returns (bool) {
+    function _withdrawBaseToken(uint256 _amount) private noSwapInProgress {
         Node storage clientNode = nodes[msg.sender];
 
         if (_amount > clientNode.baseTokenAmount) {
@@ -435,10 +465,11 @@ contract ERC20DDCAManager is Ownable, Pausable {
         if (_status == true) {
             clientNode.baseTokenAmount -= _amount;
             nodes[msg.sender] = clientNode;
-            _removeClientIfZeroBalance(msg.sender);
-        }
 
-        return _status;
+            _removeClientIfZeroBalance(msg.sender);
+
+            emit Withdraw(_status, address(baseToken), _amount, msg.sender);
+        }
     }
 
     /**
@@ -446,9 +477,7 @@ contract ERC20DDCAManager is Ownable, Pausable {
      *
      * @param _amount The amount to be withdrawn
      */
-    function _withdrawQuoteToken(
-        uint256 _amount
-    ) private noSwapInProgress returns (bool) {
+    function _withdrawQuoteToken(uint256 _amount) private noSwapInProgress {
         Node storage clientNode = nodes[msg.sender];
 
         if (_amount > clientNode.quoteTokenAmount) {
@@ -470,11 +499,18 @@ contract ERC20DDCAManager is Ownable, Pausable {
 
             nodes[msg.sender] = clientNode;
             _removeClientIfZeroBalance(msg.sender);
-        }
 
-        return _status;
+            emit Withdraw(_status, address(quoteToken), _amount, msg.sender);
+        }
     }
 
+    /**
+     * @notice Removes a client node when they run out of
+     * quote token or their quote token balance is less than
+     * their lot size
+     *
+     * @param _client The address of the client
+     */
     function _removeClientIfZeroBalance(address _client) internal {
         Node memory clientNode = nodes[_client];
         if (
@@ -493,12 +529,11 @@ contract ERC20DDCAManager is Ownable, Pausable {
         }
     }
 
-    function getTotalFeesCollected() public view returns (uint256) {
+    /**
+     * @notice Function to check the total fees collected
+     */
+    function getTotalFeesCollected() public view onlyOwner returns (uint256) {
         return _totalFeesCollected;
-    }
-
-    function getFeesPercent() public view returns (uint256) {
-        return _feesPercent;
     }
 
     /**
@@ -507,9 +542,13 @@ contract ERC20DDCAManager is Ownable, Pausable {
      * @param newFeesPercent The new fees percent
      */
     function updateFeesPercent(uint256 newFeesPercent) public onlyOwner {
-        require(newFeesPercent >= 1, "Fees percent cannot exceed 100");
+        if (newFeesPercent < 100 || newFeesPercent > MathUtils.exponent(6)) {
+            revert ValidationError({
+                message: "Fees percent should be between 1 and 100"
+            });
+        }
 
-        _feesPercent = newFeesPercent;
+        feesPercent = newFeesPercent;
     }
 
     /**
@@ -517,7 +556,10 @@ contract ERC20DDCAManager is Ownable, Pausable {
      *
      * @param _amount The amount of fees to withdraw
      */
-    function withdrawFees(uint256 _amount) public onlyOwner {
+    function withdrawFees(
+        address account,
+        uint256 _amount
+    ) public onlyOwner noSwapInProgress {
         if (_amount > _totalFeesCollected) {
             revert InsufficientBalance({
                 token: quoteToken.symbol(),
@@ -526,7 +568,7 @@ contract ERC20DDCAManager is Ownable, Pausable {
             });
         }
 
-        bool _status = quoteToken.transfer(msg.sender, _amount);
+        bool _status = quoteToken.transfer(account, _amount);
 
         require(_status, "Withdrawal failed");
 
