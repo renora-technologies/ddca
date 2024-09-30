@@ -1,52 +1,11 @@
 # DDCA
 
-This project demonstrates a basic Hardhat use case. It comes with a sample contract, a test for that contract, and a Hardhat Ignition module that deploys that contract.
-
-Try running some of the following tasks:
-
-##### Install dependecies
-```shell
-yarn install
-```
-
-##### Build
-```shell
-yarn build
-```
-
-##### Run tests
-```shell
-yarn test
-```
 
 
-## Deployed Contrcts:
+## Arbitrum One
 
-### Testnet
-<table>
-  <thead>
-    <tr>
-      <td>Contract</td>
-      <td>Address</td>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>DDCA (WBTC/USDT)</td>
-      <td><code>0xDC0911A1996139A58c99E99BE3A7671fe7D43e7E</code></td>
-    </tr>
-     <tr>
-      <td></td>
-      <td>WBTC | <code>0xCb8c6115eE442e6498736EAF33cCE0BDc7A1432C</code></td>
-    </tr>
-     <tr>
-      <td></td>
-      <td>USDT | <code>0x152A760ab2fcD0e9A76C76213e8D0Be0Be5dc12A</code></td>
-    </tr>
-  </tbody>
-</table>
+### Deployed Contrcts:
 
-### Mainnet
 <table>
   <thead>
     <tr>
@@ -57,12 +16,66 @@ yarn test
   <tbody>
     <tr>
       <td>DDCA</td>
-      <td><code>...</code></td>
+      <td></td>
+    </tr>
+       <tr>
+      <td></td>
+      <td>WBTC/USDT | <code><a href="https://arbiscan.io/address/0xfC3DAad5fC0151770DB3ae2C2c03021970aF7AaA" target="_blank">0xfC3DAad5fC0151770DB3ae2C2c03021970aF7AaA</a></code></td>
+    </tr>
+    <tr>
+      <td></td>
+      <td>ETH/USDC | <code><a href="https://arbiscan.io/address/0x39C8ee746E83386087C9e0eDB650f7A77323131D" target="_blank">0x39C8ee746E83386087C9e0eDB650f7A77323131D</a></code></td>
     </tr>
   </tbody>
 </table>
 
 ## Etherlink testnet
+
+### Deployed Contrcts:
+
+<table>
+  <thead>
+    <tr>
+      <td>Contract</td>
+      <td>Address</td>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>DDCA</td>
+      <td></td>
+    </tr>
+       <tr>
+      <td></td>
+      <td>WBTC/USDT | <code><a href="https://testnet.explorer.etherlink.com/address/0x5156d4AB623bfAEa3649aAa1C4D180CeC3289352" target="_blank">0x5156d4AB623bfAEa3649aAa1C4D180CeC3289352</a></code></td>
+    </tr>
+    <tr>
+      <td></td>
+      <td>WXTZ/USDT | <code><a href="https://testnet.explorer.etherlink.com/address/0x14203252012dd4EdA3780C7bd14089f181ac7eDc" target="_blank">0x14203252012dd4EdA3780C7bd14089f181ac7eDc</a></code></td>
+    </tr>
+    <tr>
+      <td></td>
+      <td>ETH/USDT | <code><a href="https://testnet.explorer.etherlink.com/address/0x97E09070BC2e1bDBff8b2b21C721eE80456A4159" target="_blank">0x97E09070BC2e1bDBff8b2b21C721eE80456A4159</a></code></td>
+    </tr>
+    <tr>
+      <td>WBTC</td>
+      <td><code>0xaE2Fbb70fD10422EF07E53Ec5083e2b1F6152205</code></td>
+    </tr>
+    <tr>
+      <td>ETH</td>
+      <td><code>0x8cfF9C622b5382858686aa3094D52e368914863E</code></td>
+    </tr>
+     <tr>
+      <td>USDT</td>
+      <td><code>0xBf8c88822671E86333d9220724432Ae651fB1140</code></td>
+    </tr>
+    <tr>
+      <td>WXTZ</td>
+      <td><code>0x8A2d00F814Bc19653E7F9AEA8572C1F2d1Db633e</code></td>
+    </tr>
+    
+  </tbody>
+</table>
 
 ### Tachyswap
 
@@ -127,3 +140,12 @@ yarn test
     </tr>
   </tbody>
 </table>
+
+<!-- USDTModule#USDT - 0xBf8c88822671E86333d9220724432Ae651fB1140
+WBTCModule#WBTC - 0xaE2Fbb70fD10422EF07E53Ec5083e2b1F6152205
+WXTZModule#WXTZ - 0x8A2d00F814Bc19653E7F9AEA8572C1F2d1Db633e
+ETHModule#ETH - 0x8cfF9C622b5382858686aa3094D52e368914863E
+
+DDCA_WBTC_USDT#DDCA - 0x7D1c9b87A11af7d8895DDf5fAF581F254966756F
+DDCA_WXTZ_USDT#DDCA - 0x4868de591eC0E725c333b11b723610f2C1866f5B
+DDCA_ETH_USDT#DDCA - 0xbf422694F2c4bA80AD665E93572EC0A4796827c0 -->
