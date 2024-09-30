@@ -8,7 +8,6 @@ import { EHTERLINK, ARBITRUM } from './configs';
 
 const ETHERSCAN_API_KEY = vars.get('ETHERSCAN_API_KEY');
 const ARBISCAN_API_KEY = vars.get('ARBISCAN_API_KEY');
-// const INFURA_API_KEY = vars.get('INFURA_API_KEY');
 const METAMASK_PRIVATE_KEY = vars.get('METAMASK_PRIVATE_KEY');
 const COINMARKETCAP_API_KEY = vars.get('COINMARKETCAP_API_KEY');
 
@@ -30,10 +29,15 @@ const config: HardhatUserConfig = {
   },
   etherscan: {
     apiKey: {
+      /**
+       * For L2 use the original chain name for ehterscan
+       * API keys
+       * https://hardhat.org/hardhat-runner/plugins/nomicfoundation-hardhat-verify#multiple-api-keys-and-alternative-block-explorers
+       */
       sepolia: ETHERSCAN_API_KEY,
+      arbitrumOne: ARBISCAN_API_KEY,
       [EHTERLINK.TESTNET.ID]: 'ETHERSCAN_API_KEY', // a string needs to be passed else it throws error
       [EHTERLINK.MAINNET.ID]: 'ETHERSCAN_API_KEY', // a string needs to be passed else it throws error
-      [ARBITRUM.MAINNET.ID]: ARBISCAN_API_KEY,
     },
     customChains: [EHTERLINK.TESTNET.EXPLORER, EHTERLINK.MAINNET.EXPLORER],
   },
