@@ -44,15 +44,13 @@ contract DDCAAribitrum is ERC20DDCAManager {
      * @notice Function to perform a exact single input
      * swap on UniSwapV3.
      *
-     * @param _amountIn The amount of quote token to be sent
-     * to the router for swapping.
-     * @param _minAmountOutExpected The min amount of quote token
-     * expected to receive from the swapping.
+     * @param _purchaseDipInputs PurchaseDipInputs
+     * @param _sqrtPriceLimitX96 Sqrt price limit
+     * @param _poolFee pool fee
      */
     function _swapExactInputSingle(
-        uint256 _amountIn,
-        uint256 _minAmountOutExpected,
-        uint256 _feeAmount,
+        PurchaseDipInputs memory _purchaseDipInputs,
+        uint160 _sqrtPriceLimitX96,
         uint24 _poolFee
     ) private {
         ISwapRouter.ExactInputSingleParams memory params = ISwapRouter
@@ -61,18 +59,18 @@ contract DDCAAribitrum is ERC20DDCAManager {
                 tokenOut: address(baseToken),
                 fee: _poolFee,
                 recipient: address(this),
-                deadline: block.timestamp + 1,
-                amountIn: _amountIn,
-                amountOutMinimum: _minAmountOutExpected,
-                sqrtPriceLimitX96: 0
+                deadline: block.timestamp + 5,
+                amountIn: _purchaseDipInputs.swapAmount,
+                amountOutMinimum: _purchaseDipInputs.minAmountOutExpected,
+                sqrtPriceLimitX96: _sqrtPriceLimitX96
             });
 
         try _swapRouter.exactInputSingle(params) returns (uint256 _amountOut) {
             _onPurchaseDip(
-                _amountIn,
+                _purchaseDipInputs.swapAmount,
                 _amountOut,
-                _minAmountOutExpected,
-                _feeAmount
+                _purchaseDipInputs.minAmountOutExpected,
+                _purchaseDipInputs.feeAmount
             );
         } catch (bytes memory reason) {
             emit DexError({message: reason});
@@ -81,6 +79,7 @@ contract DDCAAribitrum is ERC20DDCAManager {
 
     function purchaseDips(
         uint256 toleratedSlippagePrice,
+        uint160 sqrtPriceLimitX96,
         uint24 poolFee
     ) public onlyOwner lock {
         _swapInProgress = true;
@@ -99,12 +98,7 @@ contract DDCAAribitrum is ERC20DDCAManager {
             purchaseDipInputs.swapAmount
         );
 
-        _swapExactInputSingle(
-            purchaseDipInputs.swapAmount,
-            purchaseDipInputs.minAmountOutExpected,
-            purchaseDipInputs.feeAmount,
-            poolFee
-        );
+        _swapExactInputSingle(purchaseDipInputs, sqrtPriceLimitX96, poolFee);
 
         _swapInProgress = false;
     }
