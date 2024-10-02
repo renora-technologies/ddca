@@ -51,7 +51,7 @@ describe('Test cases for ERC20DDCAManager', function () {
   ) => {
     const approve = account ? token.connect(account).approve : token.approve;
 
-    await approve(address, amount);
+    return await approve(address, amount);
   };
 
   /**
@@ -60,6 +60,7 @@ describe('Test cases for ERC20DDCAManager', function () {
    * @param quoteToken
    * @param amount
    * @param lotSize
+   * @param account
    * @returns
    */
   const createDDCA = async (
@@ -342,5 +343,42 @@ describe('Test cases for ERC20DDCAManager', function () {
     await expect(
       ddcaManager.connect(accounts[0]).withdrawFees(accounts[0], toBigInt(0)),
     ).to.be.revertedWithCustomError(ddcaManager, 'OwnableUnauthorizedAccount');
+  });
+
+  it('Owners cannot withdraw clients fund', async function () {
+    const { ddcaManager, accounts, usdt, owner }: any =
+      await loadFixture(deployContracts);
+
+    const _quoteTokenAmount = parseUnits('100000', 6);
+    const _lotSize = parseUnits('1000', 6);
+    const clientAccount = accounts[0];
+
+    const evilAccount = accounts[1];
+
+    await airDrop(usdt, _quoteTokenAmount, clientAccount);
+
+    const ddcaAddress = await ddcaManager.getAddress();
+
+    await createDDCA(
+      ddcaManager,
+      usdt,
+      _quoteTokenAmount,
+      _lotSize,
+      clientAccount,
+    );
+
+    const initialBalance = await usdt.balanceOf(ddcaAddress);
+
+    await expect(
+      approveAllowance(usdt, evilAccount.address, _quoteTokenAmount),
+    ).to.emit(usdt, 'Approval');
+
+    await expect(
+      usdt.transferFrom(ddcaAddress, evilAccount.address, _quoteTokenAmount),
+    ).to.be.revertedWithCustomError(usdt, 'ERC20InsufficientAllowance');
+
+    const finalBalance = await usdt.balanceOf(ddcaAddress);
+
+    expect(finalBalance).to.be.equal(initialBalance);
   });
 });
