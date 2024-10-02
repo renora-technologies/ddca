@@ -6,6 +6,8 @@ import '@nomicfoundation/hardhat-verify';
 
 import { EHTERLINK, ARBITRUM } from './configs';
 
+require('./tasks/deployAndVerify');
+
 const ETHERSCAN_API_KEY = vars.get('ETHERSCAN_API_KEY');
 const ARBISCAN_API_KEY = vars.get('ARBISCAN_API_KEY');
 const METAMASK_PRIVATE_KEY = vars.get('METAMASK_PRIVATE_KEY');
