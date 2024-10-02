@@ -7,11 +7,10 @@
     "type": "git"
   },
   "scripts": {
-    "build": "hardhat clean && yarn hardhat compile",
+    "build": "yarn hardhat compile",
+    "build:clean": "hardhat clean && yarn hardhat compile",
     "test:light": "hardhat test",
-    "test": "hardhat test --network hardhat",
-    "deploy:test": "hardhat ignition deploy ./ignition/modules/DDCA.ts --network etherlink.testnet --verify",
-    "deploy" : "hardhat ignition deploy ./ignition/modules/DDCA.ts --network etherlink.mainnet --verify"
+    "test": "hardhat test --network hardhat"
   },
   "author": "Sayan Bose <sayan.bose@renora.io>",
   "license": "MIT",
