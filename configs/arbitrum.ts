@@ -1,5 +1,7 @@
 import { vars } from 'hardhat/config';
 
+import { ARBITRUM as arbitrumOne } from '../constants/networks';
+
 const METAMASK_PRIVATE_KEY = vars.get('METAMASK_PRIVATE_KEY');
 
 export const ARBITRUM_SEPOLIA_CHAIN_ID = 421_614;
@@ -25,7 +27,7 @@ export const ARBITRUM = {
     },
   },
   MAINNET: {
-    ID: 'arbitrum.mainnet',
+    ID: arbitrumOne.MAINNET,
     NAME: 'Arbitrum One',
     CONFIG: {
       url: 'https://arb1.arbitrum.io/rpc',
@@ -33,7 +35,7 @@ export const ARBITRUM = {
       chainId: ARBITRUM_CHAIN_ID,
     },
     EXPLORER: {
-      network: 'arbitrum.mainnet',
+      network: arbitrumOne.MAINNET,
       chainId: ARBITRUM_CHAIN_ID,
       urls: {
         name: 'Arbiscan',

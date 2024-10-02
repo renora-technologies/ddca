@@ -1,5 +1,7 @@
 import { vars } from 'hardhat/config';
 
+import { ETHERLINK as etherlink } from '../constants/networks';
+
 const METAMASK_PRIVATE_KEY = vars.get('METAMASK_PRIVATE_KEY');
 
 export const TESTNET_CHAIN_ID = 128_123;
@@ -7,7 +9,7 @@ export const MAINNET_CHAIN_ID = 42_793;
 
 export const EHTERLINK = {
   TESTNET: {
-    ID: 'etherlink.testnet',
+    ID: etherlink.TESTNET,
     NAME: 'Etherlink Testnet',
     CONFIG: {
       url: 'https://node.ghostnet.etherlink.com',
@@ -15,7 +17,7 @@ export const EHTERLINK = {
       chainId: TESTNET_CHAIN_ID,
     },
     EXPLORER: {
-      network: 'etherlink.testnet',
+      network: etherlink.TESTNET,
       chainId: TESTNET_CHAIN_ID,
       urls: {
         apiURL: 'https://testnet.explorer.etherlink.com/api',
