@@ -1,7 +1,7 @@
 import { HardhatRuntimeEnvironment } from 'hardhat/types';
 import { task, subtask } from 'hardhat/config';
 
-import { ARBITRRUM, ETHERLINK } from '../constants/addesses';
+import { ARBITRRUM } from '../constants/addesses';
 
 interface DDCAArgs {
   base: string;
@@ -11,7 +11,6 @@ interface DDCAArgs {
 
 const ON_CHAIN_ADDRESS_MAP = {
   ...ARBITRRUM,
-  ...ETHERLINK,
 };
 
 const getContractArguments = ({ base, quote, network }: any) => {
@@ -29,7 +28,6 @@ const getContractArguments = ({ base, quote, network }: any) => {
 };
 
 const CONTRACT_NAMES: Record<string, string> = {
-  ['etherlink.testnet']: 'DDCAEtherlink',
   ['arbitrum.mainnet']: 'DDCAAribitrum',
 };
 
