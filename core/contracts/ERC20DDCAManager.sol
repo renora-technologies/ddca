@@ -246,10 +246,10 @@ contract ERC20DDCAManager is Ownable, Pausable {
      *
      * @param _amount The amount to top up
      */
-    function topUp(uint256 _amount) public noSwapInProgress whenNotPaused {
+    function topUp(
+        uint256 _amount
+    ) public noSwapInProgress whenNotPaused onlyClient {
         Node storage clientNode = nodes[msg.sender];
-
-        require(clientNode.account == msg.sender, "Account does not exist.");
 
         bool _status = _deposit(_amount);
 
@@ -272,10 +272,8 @@ contract ERC20DDCAManager is Ownable, Pausable {
      */
     function updateLotSize(
         uint256 _newLotSize
-    ) public noSwapInProgress whenNotPaused {
+    ) public noSwapInProgress whenNotPaused onlyClient {
         Node storage clientNode = nodes[msg.sender];
-
-        require(clientNode.account == msg.sender, "Account does not exist.");
 
         if (_newLotSize > clientNode.quoteTokenAmount) {
             revert ValidationError({
@@ -548,10 +546,8 @@ contract ERC20DDCAManager is Ownable, Pausable {
         }
     }
 
-    function toggleDipsPurchasing() public noSwapInProgress {
+    function toggleDipsPurchasing() public noSwapInProgress onlyClient {
         Node storage clientNode = nodes[msg.sender];
-
-        require(clientNode.account == msg.sender, "Account does not exist.");
 
         clientNode.isActive = !clientNode.isActive;
     }
