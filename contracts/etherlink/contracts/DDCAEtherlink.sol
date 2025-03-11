@@ -59,11 +59,14 @@ contract DDCAEtherlink is ERC20DDCAManager {
     ) public onlyOwner lock {
         _swapInProgress = true;
 
-        if (_totalLotSize <= 0) {
+        uint256 totalLotSize = getTotalLotSize();
+
+        if (totalLotSize <= 0) {
             revert ValidationError({message: "Not enough funds to swap"});
         }
 
         PurchaseDipInputs memory purchaseDipInputs = _getPurchaseDipInputs(
+            totalLotSize,
             toleratedSlippagePrice
         );
 

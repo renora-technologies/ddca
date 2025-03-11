@@ -11,6 +11,9 @@ import {MathUtils} from "../../../core/libraries/MathUtils.sol";
 /**
  * @title DDCA
  * @notice Dollar-Cost Averaging contract for automated trading
+ *
+ * @dev ERROR CODES FOR UNISWAP V3
+ * @dev https://docs.uniswap.org/contracts/v3/reference/error-codes
  */
 contract DDCAAribitrum is ERC20DDCAManager {
     ISwapRouter private immutable _swapRouter;
@@ -83,12 +86,14 @@ contract DDCAAribitrum is ERC20DDCAManager {
         uint24 poolFee
     ) public onlyOwner lock {
         _swapInProgress = true;
+        uint256 totalLotSize = getTotalLotSize();
 
-        if (_totalLotSize <= 0) {
+        if (totalLotSize <= 0) {
             revert ValidationError({message: "Not enough funds to swap"});
         }
 
         PurchaseDipInputs memory purchaseDipInputs = _getPurchaseDipInputs(
+            totalLotSize,
             toleratedSlippagePrice
         );
 
