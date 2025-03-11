@@ -4,7 +4,7 @@ import '@nomicfoundation/hardhat-toolbox';
 import '@nomicfoundation/hardhat-ignition-ethers';
 import '@nomicfoundation/hardhat-verify';
 
-import { EHTERLINK, ARBITRUM } from './configs';
+import { ARBITRUM } from './configs';
 
 require('./tasks/deployAndVerify');
 
@@ -24,8 +24,6 @@ const config: HardhatUserConfig = {
       url: `https://rpc2.sepolia.org`,
       accounts: [METAMASK_PRIVATE_KEY],
     },
-    [EHTERLINK.TESTNET.ID]: EHTERLINK.TESTNET.CONFIG,
-    [EHTERLINK.MAINNET.ID]: EHTERLINK.MAINNET.CONFIG,
     [ARBITRUM.SEPOLIA.ID]: ARBITRUM.SEPOLIA.CONFIG,
     [ARBITRUM.MAINNET.ID]: ARBITRUM.MAINNET.CONFIG,
   },
@@ -38,10 +36,8 @@ const config: HardhatUserConfig = {
        */
       sepolia: ETHERSCAN_API_KEY,
       arbitrumOne: ARBISCAN_API_KEY,
-      [EHTERLINK.TESTNET.ID]: 'ETHERSCAN_API_KEY', // a string needs to be passed else it throws error
-      [EHTERLINK.MAINNET.ID]: 'ETHERSCAN_API_KEY', // a string needs to be passed else it throws error
     },
-    customChains: [EHTERLINK.TESTNET.EXPLORER, EHTERLINK.MAINNET.EXPLORER],
+    customChains: [],
   },
   sourcify: {
     enabled: false,
