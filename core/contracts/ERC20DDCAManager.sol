@@ -364,7 +364,7 @@ contract ERC20DDCAManager is Ownable, Pausable {
      * @param _amountIn The total amount sent to the swap
      * @param _amountOut The total amount of token received from the swap
      */
-    function _distributeReward(uint256 _amountIn, uint256 _amountOut) public {
+    function _distributeReward(uint256 _amountIn, uint256 _amountOut) internal {
         uint256 totalReward = 0;
 
         for (uint i = 0; i < clients.length; i++) {
