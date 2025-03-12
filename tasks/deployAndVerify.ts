@@ -13,6 +13,10 @@ const ON_CHAIN_ADDRESS_MAP = {
   ...ARBITRRUM,
 };
 
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 const getContractArguments = ({ base, quote, network }: any) => {
   const onCahinAddresses: Record<string, string> =
     ON_CHAIN_ADDRESS_MAP[network];
@@ -71,6 +75,12 @@ task('deploy', 'Deploys contract on chain')
     const contratAddress = await deployedContract.getAddress();
 
     console.log(`Contract depployed at ${contratAddress}`);
+
+    /***
+     * A delay is added before verifying, so that the contract bytecode is
+     * propagated
+     */
+    await delay(5000);
 
     if (verify) {
       await hre.run('verifyContract', {
