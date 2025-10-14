@@ -2,6 +2,7 @@
 
 pragma solidity ^0.8.0;
 
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
@@ -10,9 +11,9 @@ import {MathUtils} from "../libraries/MathUtils.sol";
 
 /**
  * @title DDCA
- * @notice Dollar-Cost Averaging contract for automated trading
+ * @notice Dips  Dollar-Cost Averaging contract for automated trading
  */
-contract ERC20DDCAManager is Ownable, Pausable {
+contract ERC20DDCAManager is ReentrancyGuard, Ownable, Pausable {
     event Deposit(bool status, address token, uint256 amount, address client);
     event Withdraw(bool status, address token, uint256 amount, address client);
 
@@ -33,14 +34,45 @@ contract ERC20DDCAManager is Ownable, Pausable {
     error ValidationError(string message);
 
     struct Node {
+        /**
+         * @notice the wallet address of the client
+         */
         address account;
+        /**
+         * @notice the base token amount for the client
+         */
         uint256 baseTokenAmount;
+        /**
+         * @notice the quote token amount for the client
+         */
         uint256 quoteTokenAmount;
+        /**
+         * @notice total base token amount bought
+         */
         uint256 totalAmountBought;
+        /**
+         * @notice total cost of the tokens bought
+         */
         uint256 totalCostPrice;
+        /**
+         * @notice average price of the total token bought
+         */
         uint256 avgBoughtPrice;
+        /**
+         * @notice total fees paid
+         */
         uint256 totalFees;
+        /**
+         * @notice the lot size set by the client
+         */
         uint256 lotSize;
+        /**
+         * @notice the lot size of the next swap
+         */
+        uint256 nextLotSize;
+        /**
+         * @notice status of the client strategy
+         */
         bool isActive;
     }
 
@@ -73,17 +105,20 @@ contract ERC20DDCAManager is Ownable, Pausable {
      * For example, to work with percentages, we scale up by a factor of 10000.
      *
      * Similarly all fees percent needs to be defined as (y/100)
-     * 0.05%    -> 500
+     * 0.05%     -> 500
      * 0.25%     -> 2500
      * 0.30%     -> 3000
      */
     uint256 public feesPercent = 2500; // default 0.25%
 
-    bool internal _isLocked = false;
+    uint256 public minDepositAmount = 10000000; // 10 USD
+    uint256 public minLotSize = 5000000; // 5 USD
+
     bool internal _swapInProgress = false;
 
     mapping(address => Node) private nodes;
     address[] private clients;
+    uint private totalClients;
 
     /**
      * @dev setting the base and the quote curency (trading pair) of the contract
@@ -103,18 +138,6 @@ contract ERC20DDCAManager is Ownable, Pausable {
         _unpause();
     }
 
-    modifier lock() {
-        // first runs this check
-        require(!_isLocked, "Function is locked");
-
-        _isLocked = true;
-
-        // runs the rest of the code which has this modifier
-        _;
-
-        _isLocked = false;
-    }
-
     modifier noSwapInProgress() {
         require(!_swapInProgress, "Swap in progress, action paused");
 
@@ -124,23 +147,27 @@ contract ERC20DDCAManager is Ownable, Pausable {
     modifier onlyClient() {
         Node storage clientNode = nodes[msg.sender];
 
-        require(clientNode.account == msg.sender, "Account does not exist.");
+        require(clientNode.account == msg.sender, "You are not the owner.");
 
         _;
     }
 
-    function getTotalLotSize() public view returns (uint256) {
+    function _getTotalLotSize() internal view returns (uint256) {
         uint256 _totalLotSize = 0;
 
-        for (uint i = 0; i < clients.length; i++) {
+        for (uint i = 0; i < totalClients; i++) {
             Node memory _clientNode = nodes[clients[i]];
 
-            if (_clientNode.isActive == true) {
-                _totalLotSize += _clientNode.lotSize;
+            if (_clientNode.isActive == true && _clientNode.nextLotSize > 0) {
+                _totalLotSize += _clientNode.nextLotSize;
             }
         }
 
         return _totalLotSize;
+    }
+
+    function getTotalLotSize() public view onlyOwner returns (uint256) {
+        return _getTotalLotSize();
     }
 
     function _getNode(
@@ -161,9 +188,9 @@ contract ERC20DDCAManager is Ownable, Pausable {
     }
 
     function getAllNodes() public view onlyOwner returns (Node[] memory) {
-        Node[] memory clientsData = new Node[](clients.length);
+        Node[] memory clientsData = new Node[](totalClients);
 
-        for (uint i = 0; i < clients.length; i++) {
+        for (uint i = 0; i < totalClients; i++) {
             clientsData[i] = nodes[clients[i]];
         }
 
@@ -174,19 +201,13 @@ contract ERC20DDCAManager is Ownable, Pausable {
         uint256 _amount,
         uint256 _lotSize
     ) internal returns (Node memory) {
-        Node memory _node;
+        Node storage _node = nodes[msg.sender];
 
         _node.account = address(msg.sender);
-        _node.baseTokenAmount = 0;
         _node.quoteTokenAmount = _amount;
         _node.lotSize = _lotSize;
-        _node.totalAmountBought = 0;
-        _node.totalCostPrice = 0;
-        _node.avgBoughtPrice = 0;
-        _node.totalFees = 0;
+        _node.nextLotSize = _lotSize;
         _node.isActive = true;
-
-        nodes[msg.sender] = _node;
 
         return _node;
     }
@@ -212,7 +233,7 @@ contract ERC20DDCAManager is Ownable, Pausable {
         _status = quoteToken.transferFrom(msg.sender, address(this), _amount);
 
         if (_status == true) {
-            emit Deposit(_status, address(baseToken), _amount, msg.sender);
+            emit Deposit(_status, address(quoteToken), _amount, msg.sender);
         }
 
         return _status;
@@ -226,19 +247,29 @@ contract ERC20DDCAManager is Ownable, Pausable {
 
         require(_node.account != msg.sender, "Account already exists.");
 
+        if (_amount < minDepositAmount) {
+            revert ValidationError({message: "Deposit amount is too low."});
+        }
+
+        if (_lotSize < minLotSize) {
+            revert ValidationError({message: "Lot size is too low."});
+        }
+
         if (_amount < _lotSize) {
             revert ValidationError({
                 message: "Given amount is lower than lot size."
             });
         }
 
+        _node = _addNode(_amount, _lotSize);
+
+        clients.push(msg.sender);
+        totalClients = clients.length;
+
         bool _status = _deposit(_amount);
-
-        if (_status == true) {
-            _node = _addNode(_amount, _lotSize);
-
-            clients.push(msg.sender);
-        }
+        // If transfer fails, then we are reverting all state
+        // changes
+        require(_status, "Transfer failed");
     }
 
     /**
@@ -251,18 +282,25 @@ contract ERC20DDCAManager is Ownable, Pausable {
     ) public noSwapInProgress whenNotPaused onlyClient {
         Node storage clientNode = nodes[msg.sender];
 
-        bool _status = _deposit(_amount);
-
-        if (_status == true) {
-            clientNode.quoteTokenAmount += _amount;
-
-            if (
-                clientNode.isActive == false &&
-                clientNode.quoteTokenAmount >= clientNode.lotSize
-            ) {
-                clientNode.isActive = true;
-            }
+        if (_amount < minDepositAmount) {
+            revert ValidationError({message: "Deposit amount is too low."});
         }
+
+        clientNode.quoteTokenAmount += _amount;
+
+        if (clientNode.quoteTokenAmount >= clientNode.lotSize) {
+            clientNode.nextLotSize = clientNode.lotSize;
+        } else {
+            clientNode.nextLotSize = clientNode.quoteTokenAmount;
+        }
+
+        if (clientNode.isActive == false && clientNode.nextLotSize > 0) {
+            clientNode.isActive = true;
+        }
+
+        bool _status = _deposit(_amount);
+        //
+        require(_status, "Transfer failed");
     }
 
     /**
@@ -275,20 +313,54 @@ contract ERC20DDCAManager is Ownable, Pausable {
     ) public noSwapInProgress whenNotPaused onlyClient {
         Node storage clientNode = nodes[msg.sender];
 
+        if (_newLotSize < minLotSize) {
+            revert ValidationError({message: "Lot size is too low."});
+        }
+
         if (_newLotSize > clientNode.quoteTokenAmount) {
             revert ValidationError({
                 message: "New lot size is greater than quote token amount."
             });
         }
 
-        if (
-            clientNode.isActive == false &&
-            clientNode.quoteTokenAmount >= _newLotSize
-        ) {
+        if (clientNode.isActive == false) {
             clientNode.isActive = true;
         }
 
         clientNode.lotSize = _newLotSize;
+        clientNode.nextLotSize = _newLotSize;
+    }
+
+    function toggleDipsPurchasing() public noSwapInProgress onlyClient {
+        Node storage clientNode = nodes[msg.sender];
+
+        if (!clientNode.isActive) {
+            /**
+             * @dev If node is in in-active state, we need to
+             * check if there is any quote token left or not.
+             */
+            require(
+                clientNode.quoteTokenAmount > 0,
+                "Not enough funds to activate strategy."
+            );
+
+            /**
+             * @dev If the quote token balance is >= lot size
+             * set by the user, we update the next lotsize to
+             * lotsize. Else, we update the next lotsize to the
+             * remaining of the quote token balance
+             */
+            if (clientNode.quoteTokenAmount >= clientNode.lotSize) {
+                clientNode.nextLotSize = clientNode.lotSize;
+            } else {
+                clientNode.nextLotSize = clientNode.quoteTokenAmount;
+            }
+
+            // Then we activate the node
+            clientNode.isActive = true;
+        } else {
+            clientNode.isActive = false;
+        }
     }
 
     /**
@@ -367,24 +439,24 @@ contract ERC20DDCAManager is Ownable, Pausable {
     function _distributeReward(uint256 _amountIn, uint256 _amountOut) internal {
         uint256 totalReward = 0;
 
-        for (uint i = 0; i < clients.length; i++) {
+        for (uint i = 0; i < totalClients; i++) {
             Node storage _clientNode = nodes[clients[i]];
 
-            if (_clientNode.isActive == true) {
+            if (_clientNode.isActive == true && _clientNode.nextLotSize > 0) {
                 /**
                  * @dev calculating fees charged for client
                  * We are defining fees as x/100, thats why we
                  * are only dividing the amount by the the fees
                  * percent.
                  */
-                uint256 _clientFee = (_clientNode.lotSize * feesPercent) /
+                uint256 _clientFee = (_clientNode.nextLotSize * feesPercent) /
                     MathUtils.exponent(6);
 
                 /**
                  * @dev calculating reward for the swap
                  * reward = ((lot_size - fee) / (swapped amount/amount in)) * total amount received
                  */
-                uint256 reward = ((_clientNode.lotSize - _clientFee) *
+                uint256 reward = ((_clientNode.nextLotSize - _clientFee) *
                     _amountOut) / _amountIn;
 
                 /**
@@ -406,7 +478,9 @@ contract ERC20DDCAManager is Ownable, Pausable {
                  * @dev updating total cost
                  * total cost = sum of all (lotsize - fees)
                  */
-                _clientNode.totalCostPrice += _clientNode.lotSize - _clientFee;
+                _clientNode.totalCostPrice +=
+                    _clientNode.nextLotSize -
+                    _clientFee;
 
                 /**
                  * @dev average bought price is total cost / total amt bought
@@ -420,17 +494,28 @@ contract ERC20DDCAManager is Ownable, Pausable {
                 /**
                  * @dev updating quote token amount
                  */
-                _clientNode.quoteTokenAmount -= _clientNode.lotSize;
+                _clientNode.quoteTokenAmount -= _clientNode.nextLotSize;
 
                 /**
-                 * @dev removing the clients lotSize from the totalLotSize
+                 * @dev If there is no quote token left, then we set the
+                 * status of the strategy to false, and nextLotSize to 0.
+                 * If the quote token amount is > 0 but less that the next
+                 * lot size, then we assign the whole amount of quote token
+                 * left as the next lot size.
                  */
-                if (
-                    _clientNode.quoteTokenAmount == 0 ||
+                if (_clientNode.quoteTokenAmount == 0) {
+                    _clientNode.isActive = false;
+                    _clientNode.nextLotSize = 0;
+                } else if (
+                    _clientNode.quoteTokenAmount > 0 &&
                     _clientNode.quoteTokenAmount < _clientNode.lotSize
                 ) {
-                    _clientNode.isActive = false;
+                    _clientNode.nextLotSize = _clientNode.quoteTokenAmount;
                 }
+            } else if (
+                _clientNode.isActive == true && _clientNode.nextLotSize == 0
+            ) {
+                _clientNode.isActive = false;
             }
         }
 
@@ -445,10 +530,18 @@ contract ERC20DDCAManager is Ownable, Pausable {
     /**
      * @notice Function to withdraw funds from the contract
      *
+     * @dev We are using the nonReentrant to protect against
+     * re-entrancy attacks on the public function
+     *
      * @param _token The token to be withdrawn
      * @param _amount The amount of the token to be withdrawn
      */
-    function withdraw(address _token, uint256 _amount) public {
+    function withdraw(
+        address _token,
+        uint256 _amount
+    ) external onlyClient nonReentrant {
+        require(_amount > 0, "Amount must be greater than 0.");
+
         if (_token == address(baseToken)) {
             _withdrawBaseToken(_amount);
         } else if (_token == address(quoteToken)) {
@@ -461,9 +554,13 @@ contract ERC20DDCAManager is Ownable, Pausable {
     /**
      * @notice Function to withdraw the base token
      *
+     * @dev We are using the CEI (Checks-Effect-Interaction) pattern
+     * to prevent re-entrancy attack on the internal
+     * methods
+     *
      * @param _amount The amount to be withdrawn
      */
-    function _withdrawBaseToken(uint256 _amount) private noSwapInProgress {
+    function _withdrawBaseToken(uint256 _amount) internal noSwapInProgress {
         Node storage clientNode = nodes[msg.sender];
 
         if (_amount > clientNode.baseTokenAmount) {
@@ -474,23 +571,27 @@ contract ERC20DDCAManager is Ownable, Pausable {
             });
         }
 
+        clientNode.baseTokenAmount -= _amount;
+        _removeClientIfZeroBalance(msg.sender);
+
         bool _status = baseToken.transfer(msg.sender, _amount);
+        // We are reverting the whole transaction, if the
+        // transfer of funds are failing
+        require(_status, "Transfer failed");
 
-        if (_status == true) {
-            clientNode.baseTokenAmount -= _amount;
-
-            _removeClientIfZeroBalance(msg.sender);
-
-            emit Withdraw(_status, address(baseToken), _amount, msg.sender);
-        }
+        emit Withdraw(_status, address(baseToken), _amount, msg.sender);
     }
 
     /**
      * @notice Function to withdraw the quote token
      *
+     * @dev We are using the CEI (Checks-Effect-Interaction) pattern
+     * to prevent re-entrancy attack on the internal
+     * methods
+     *
      * @param _amount The amount to be withdrawn
      */
-    function _withdrawQuoteToken(uint256 _amount) private noSwapInProgress {
+    function _withdrawQuoteToken(uint256 _amount) internal noSwapInProgress {
         Node storage clientNode = nodes[msg.sender];
 
         if (_amount > clientNode.quoteTokenAmount) {
@@ -501,24 +602,39 @@ contract ERC20DDCAManager is Ownable, Pausable {
             });
         }
 
-        // uint256 _prevQuoteTokenBalance = clientNode.quoteTokenAmount;
+        /**
+         * @dev If the balance quote token amount is <= 1 USD,
+         * then the entire quote token balance is transferred
+         * out
+         */
+        uint256 _amountToTransfer = clientNode.quoteTokenAmount - _amount <=
+            1 * MathUtils.exponent(6)
+            ? clientNode.quoteTokenAmount
+            : _amount;
 
-        bool _status = quoteToken.transfer(msg.sender, _amount);
+        clientNode.quoteTokenAmount -= _amountToTransfer;
+        _removeClientIfZeroBalance(msg.sender);
 
-        if (_status == true) {
-            clientNode.quoteTokenAmount -= _amount;
-
-            if (
-                clientNode.isActive == true &&
-                clientNode.quoteTokenAmount < clientNode.lotSize
-            ) {
+        if (clientNode.quoteTokenAmount < clientNode.lotSize) {
+            if (clientNode.quoteTokenAmount > 0) {
+                clientNode.nextLotSize = clientNode.quoteTokenAmount;
+            } else {
+                clientNode.nextLotSize = 0;
                 clientNode.isActive = false;
             }
-
-            _removeClientIfZeroBalance(msg.sender);
-
-            emit Withdraw(_status, address(quoteToken), _amount, msg.sender);
         }
+
+        bool _status = quoteToken.transfer(msg.sender, _amountToTransfer);
+        // We are reverting the whole transaction, if the
+        // transfer of funds are failing
+        require(_status, "Transfer failed");
+
+        emit Withdraw(
+            _status,
+            address(quoteToken),
+            _amountToTransfer,
+            msg.sender
+        );
     }
 
     /**
@@ -529,27 +645,23 @@ contract ERC20DDCAManager is Ownable, Pausable {
      * @param _client The address of the client
      */
     function _removeClientIfZeroBalance(address _client) internal {
-        Node memory clientNode = nodes[_client];
+        Node storage clientNode = nodes[_client];
         if (
             clientNode.baseTokenAmount == 0 && clientNode.quoteTokenAmount == 0
         ) {
             // Remove client from the clients array
-            for (uint i = 0; i < clients.length; i++) {
+            for (uint i = 0; i < totalClients; i++) {
                 if (clients[i] == _client) {
-                    clients[i] = clients[clients.length - 1];
+                    clients[i] = clients[totalClients - 1];
                     clients.pop();
+
+                    totalClients = clients.length;
                     break;
                 }
             }
             // Remove client from nodes mapping
             delete nodes[_client];
         }
-    }
-
-    function toggleDipsPurchasing() public noSwapInProgress onlyClient {
-        Node storage clientNode = nodes[msg.sender];
-
-        clientNode.isActive = !clientNode.isActive;
     }
 
     /**
@@ -564,7 +676,9 @@ contract ERC20DDCAManager is Ownable, Pausable {
      *
      * @param newFeesPercent The new fees percent
      */
-    function updateFeesPercent(uint256 newFeesPercent) public onlyOwner {
+    function updateFeesPercent(
+        uint256 newFeesPercent
+    ) public onlyOwner noSwapInProgress {
         if (newFeesPercent < 100 || newFeesPercent > 20000) {
             revert ValidationError({
                 message: "Fees percent should be between 0.01 and 2"
@@ -591,10 +705,20 @@ contract ERC20DDCAManager is Ownable, Pausable {
             });
         }
 
-        bool _status = quoteToken.transfer(account, _amount);
-
-        require(_status, "Withdrawal failed");
-
         _totalFeesCollected -= _amount;
+
+        bool _status = quoteToken.transfer(account, _amount);
+        //
+        require(_status, "Transfer failed");
+    }
+
+    function updateMinDepositAmount(
+        uint256 _newMinDepositAmount
+    ) public onlyOwner {
+        minDepositAmount = _newMinDepositAmount;
+    }
+
+    function updateMinLotSize(uint256 _newMinLotSize) public onlyOwner {
+        minLotSize = _newMinLotSize;
     }
 }
