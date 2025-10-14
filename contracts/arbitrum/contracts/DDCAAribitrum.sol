@@ -9,8 +9,9 @@ import {ERC20DDCAManager} from "../../../core/contracts/ERC20DDCAManager.sol";
 import {MathUtils} from "../../../core/libraries/MathUtils.sol";
 
 /**
- * @title DDCA
+ * @title DDCA V3
  * @notice Dollar-Cost Averaging contract for automated trading
+ * @notice Deployed on 14th October, 2025
  *
  * @dev ERROR CODES FOR UNISWAP V3
  * @dev https://docs.uniswap.org/contracts/v3/reference/error-codes
@@ -56,6 +57,12 @@ contract DDCAAribitrum is ERC20DDCAManager {
         uint160 _sqrtPriceLimitX96,
         uint24 _poolFee
     ) private {
+        TransferHelper.safeApprove(
+            address(quoteToken),
+            address(_swapRouter),
+            _purchaseDipInputs.swapAmount
+        );
+
         ISwapRouter.ExactInputSingleParams memory params = ISwapRouter
             .ExactInputSingleParams({
                 tokenIn: address(quoteToken),
@@ -84,9 +91,9 @@ contract DDCAAribitrum is ERC20DDCAManager {
         uint256 toleratedSlippagePrice,
         uint160 sqrtPriceLimitX96,
         uint24 poolFee
-    ) public onlyOwner lock {
+    ) public onlyOwner whenNotPaused {
         _swapInProgress = true;
-        uint256 totalLotSize = getTotalLotSize();
+        uint256 totalLotSize = _getTotalLotSize();
 
         if (totalLotSize <= 0) {
             revert ValidationError({message: "Not enough funds to swap"});
@@ -95,12 +102,6 @@ contract DDCAAribitrum is ERC20DDCAManager {
         PurchaseDipInputs memory purchaseDipInputs = _getPurchaseDipInputs(
             totalLotSize,
             toleratedSlippagePrice
-        );
-
-        TransferHelper.safeApprove(
-            address(quoteToken),
-            address(_swapRouter),
-            purchaseDipInputs.swapAmount
         );
 
         _swapExactInputSingle(purchaseDipInputs, sqrtPriceLimitX96, poolFee);
