@@ -3,13 +3,18 @@ import { HardhatUserConfig, vars } from 'hardhat/config';
 import '@nomicfoundation/hardhat-toolbox';
 import '@nomicfoundation/hardhat-ignition-ethers';
 import '@nomicfoundation/hardhat-verify';
+import 'solidity-coverage';
+import 'hardhat-gas-reporter';
 
 import { ARBITRUM } from './configs';
 
+/**
+ * ! This is done to register tasks
+ */
 require('./tasks/deployAndVerify');
+require('./tasks/contractCall');
 
 const ETHERSCAN_API_KEY = vars.get('ETHERSCAN_API_KEY');
-const ARBISCAN_API_KEY = vars.get('ARBISCAN_API_KEY');
 const METAMASK_PRIVATE_KEY = vars.get('METAMASK_PRIVATE_KEY');
 const COINMARKETCAP_API_KEY = vars.get('COINMARKETCAP_API_KEY');
 
@@ -27,17 +32,27 @@ const config: HardhatUserConfig = {
     [ARBITRUM.SEPOLIA.ID]: ARBITRUM.SEPOLIA.CONFIG,
     [ARBITRUM.MAINNET.ID]: ARBITRUM.MAINNET.CONFIG,
   },
+
   etherscan: {
-    apiKey: {
-      /**
-       * For L2 use the original chain name for ehterscan
-       * API keys
-       * https://hardhat.org/hardhat-runner/plugins/nomicfoundation-hardhat-verify#multiple-api-keys-and-alternative-block-explorers
-       */
-      sepolia: ETHERSCAN_API_KEY,
-      arbitrumOne: ARBISCAN_API_KEY,
-    },
-    customChains: [],
+    apiKey: ETHERSCAN_API_KEY,
+    customChains: [
+      {
+        network: 'localhost',
+        chainId: 31337,
+        urls: {
+          apiURL: 'http://localhost/api', // Your Blockscout API URL
+          browserURL: 'http://localhost', // Your Blockscout frontend URL
+        },
+      },
+      {
+        network: ARBITRUM.MAINNET.ID,
+        chainId: 42161,
+        urls: {
+          apiURL: 'https://api.etherscan.io/v2/api?chainid=42161',
+          browserURL: 'https://arbiscan.io',
+        },
+      },
+    ],
   },
   sourcify: {
     enabled: false,
