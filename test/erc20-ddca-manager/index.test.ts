@@ -1,179 +1,22 @@
-import {
-  parseUnits,
-  toBigInt,
-  ContractTransactionResponse,
-  AddressLike,
-} from 'ethers';
+import { parseUnits, toBigInt } from 'ethers';
 import { expect } from 'chai';
-import hre from 'hardhat';
 
 import { loadFixture } from '@nomicfoundation/hardhat-toolbox/network-helpers';
-import { ERC20DDCAManager, ERC20, USDT, WBTC } from 'typechain-types';
-import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
 
-interface IContext {
-  ddcaManager: ERC20DDCAManager & {
-    deploymentTransaction(): ContractTransactionResponse;
-  };
-  ddcaAddress: AddressLike;
-  usdt: USDT & {
-    deploymentTransaction(): ContractTransactionResponse;
-  };
-  usdtAddress: AddressLike;
-  wbtc: WBTC & {
-    deploymentTransaction(): ContractTransactionResponse;
-  };
-  wbtcAddress: AddressLike;
-  owner: HardhatEthersSigner;
-  accounts: HardhatEthersSigner[];
-}
+import {
+  createMockDDCAStrategies,
+  Node,
+  getAmountOut,
+  getNode,
+  getNodeFromDDCANode,
+  deployContracts,
+  airDrop,
+  createDDCA,
+  toggleDDCANodestatus,
+  topUpDDCA,
+} from './helpers';
 
 describe('ERC20DDCAManager', function () {
-  /**
-   *
-   * @returns
-   */
-  const deployContracts = async (): Promise<IContext> => {
-    const [owner, ...accounts] = await hre.ethers.getSigners();
-
-    const WBTC = await hre.ethers.getContractFactory('WBTC');
-    const USDT = await hre.ethers.getContractFactory('USDT');
-    const DDCAManager = await hre.ethers.getContractFactory('ERC20DDCAManager');
-
-    const usdt = await USDT.deploy();
-    const usdtAddress = await usdt.getAddress();
-
-    const wbtc = await WBTC.deploy();
-    const wbtcAddress = await wbtc.getAddress();
-
-    const ddcaManager = await DDCAManager.deploy(wbtcAddress, usdtAddress);
-    const ddcaAddress = await ddcaManager.getAddress();
-
-    return {
-      ddcaManager,
-      ddcaAddress,
-      usdt,
-      usdtAddress,
-      wbtc,
-      wbtcAddress,
-      owner,
-      accounts,
-    };
-  };
-
-  /**
-   *
-   * @param token
-   * @param address
-   * @param amount
-   */
-  const approveAllowance = async (
-    token: ERC20,
-    address: string,
-    amount: bigint,
-    account?: HardhatEthersSigner,
-  ) => {
-    const approve = account ? token.connect(account).approve : token.approve;
-
-    return await approve(address, amount);
-  };
-
-  /**
-   *
-   * @param ddcaManager
-   * @param quoteToken
-   * @param amount
-   * @param lotSize
-   * @param account
-   * @returns
-   */
-  const createDDCA = async (
-    ddcaManager: ERC20DDCAManager,
-    quoteToken: ERC20,
-    amount: bigint,
-    lotSize: bigint,
-    account?: HardhatEthersSigner,
-  ) => {
-    const ddcaAddress = await ddcaManager.getAddress();
-
-    await approveAllowance(quoteToken, ddcaAddress, amount, account);
-
-    const createDDCA = account
-      ? ddcaManager.connect(account).createDDCA
-      : ddcaManager.createDDCA;
-    const getNode = account
-      ? ddcaManager.connect(account).getNode
-      : ddcaManager.getNode;
-
-    await createDDCA(amount, lotSize);
-
-    const node = await getNode();
-
-    return node;
-  };
-
-  /**
-   *
-   * @param ddcaManager
-   * @param quoteToken
-   * @param amount
-   * @returns
-   */
-  const topUpDDCA = async (
-    ddcaManager: ERC20DDCAManager,
-    quoteToken: ERC20,
-    amount: bigint,
-    account?: HardhatEthersSigner,
-  ) => {
-    const ddcaAddress = await ddcaManager.getAddress();
-
-    const topUp = account
-      ? ddcaManager.connect(account).topUp
-      : ddcaManager.topUp;
-    const getNode = account
-      ? ddcaManager.connect(account).getNode
-      : ddcaManager.getNode;
-
-    await approveAllowance(quoteToken, ddcaAddress, amount, account);
-
-    await topUp(amount);
-
-    const updatedNode = await getNode();
-
-    return updatedNode;
-  };
-
-  const toggleDDCANodestatus = async (
-    ddcaManager: ERC20DDCAManager,
-    account?: HardhatEthersSigner,
-  ) => {
-    const toggleDipsPurchasing = account
-      ? ddcaManager.connect(account).toggleDipsPurchasing
-      : ddcaManager.toggleDipsPurchasing;
-
-    const getNode = account
-      ? ddcaManager.connect(account).getNode
-      : ddcaManager.getNode;
-
-    await toggleDipsPurchasing();
-
-    const node = await getNode();
-
-    return node;
-  };
-
-  const airDrop = async (
-    token: ERC20,
-    amount: bigint,
-    toAccount: HardhatEthersSigner,
-  ) => {
-    // token.approve(toAccount, amount);
-
-    const status = token.transfer(toAccount, amount);
-
-    return status;
-  };
-
   describe('Initial states of the contract', function () {
     /**
      *
@@ -201,11 +44,56 @@ describe('ERC20DDCAManager', function () {
     });
   });
 
-  describe('Create', function () {
+  describe('Create DDCA', function () {
     /**
      *
      */
-    it('Creates a DDCA strategy for user', async function () {
+    it('Failed to create a DDCA strategy with deposit amount below allowed min', async function () {
+      const { ddcaManager, usdt, owner }: any =
+        await loadFixture(deployContracts);
+
+      const _quoteTokenAmount = parseUnits('9', 6);
+      const _lotSize = parseUnits('100', 6);
+
+      await expect(createDDCA(ddcaManager, usdt, _quoteTokenAmount, _lotSize))
+        .to.be.revertedWithCustomError(ddcaManager, 'ValidationError')
+        .withArgs('Deposit amount is too low.');
+    });
+
+    /**
+     *
+     */
+    it('Failed to create a DDCA strategy with lotsize below allowed min', async function () {
+      const { ddcaManager, usdt, owner }: any =
+        await loadFixture(deployContracts);
+
+      const _quoteTokenAmount = parseUnits('10', 6);
+      const _lotSize = parseUnits('4', 6);
+
+      await expect(createDDCA(ddcaManager, usdt, _quoteTokenAmount, _lotSize))
+        .to.be.revertedWithCustomError(ddcaManager, 'ValidationError')
+        .withArgs('Lot size is too low.');
+    });
+
+    /**
+     *
+     */
+    it('Failed to create a DDCA strategy with lotsize > deposit amount', async function () {
+      const { ddcaManager, usdt, owner }: any =
+        await loadFixture(deployContracts);
+
+      const _quoteTokenAmount = parseUnits('100', 6);
+      const _lotSize = parseUnits('500', 6);
+
+      await expect(createDDCA(ddcaManager, usdt, _quoteTokenAmount, _lotSize))
+        .to.be.revertedWithCustomError(ddcaManager, 'ValidationError')
+        .withArgs('Given amount is lower than lot size.');
+    });
+
+    /**
+     *
+     */
+    it('Creates a DDCA strategy with valid inputs', async function () {
       const { ddcaManager, usdt, owner }: any =
         await loadFixture(deployContracts);
 
@@ -214,13 +102,14 @@ describe('ERC20DDCAManager', function () {
 
       await createDDCA(ddcaManager, usdt, _quoteTokenAmount, _lotSize);
 
-      const node = await ddcaManager.getNode();
+      const node = await getNode(ddcaManager);
 
-      expect(node[0]).to.be.equal(owner.address);
-      expect(node[2]).to.be.equal(_quoteTokenAmount);
-      expect(node[1]).to.be.equal(0);
-      expect(node[7]).to.be.equal(_lotSize);
-      expect(node[8]).to.be.equal(true);
+      expect(node.account).to.be.equal(owner.address);
+      expect(node.quoteTokenAmount).to.be.equal(_quoteTokenAmount);
+      expect(node.baseTokenAmount).to.be.equal(0);
+      expect(node.lotSize).to.be.equal(_lotSize);
+      expect(node.nextLotSize).to.be.equal(_lotSize);
+      expect(node.status).to.be.equal(true);
     });
   });
 
@@ -228,50 +117,147 @@ describe('ERC20DDCAManager', function () {
     /**
      *
      */
-    it('Pause Dips Purchasing', async function () {
+    it('Pause active strategy', async function () {
       const { ddcaManager, usdt }: any = await loadFixture(deployContracts);
 
       const _quoteTokenAmount = parseUnits('10000', 6);
       const _lotSize = parseUnits('100', 6);
 
-      await createDDCA(ddcaManager, usdt, _quoteTokenAmount, _lotSize);
+      const node = await createDDCA(
+        ddcaManager,
+        usdt,
+        _quoteTokenAmount,
+        _lotSize,
+      );
 
-      const activeNode = await ddcaManager.getNode();
-      const totalLotSize = await ddcaManager.getTotalLotSize();
-
-      expect(activeNode[8]).to.be.equal(true);
-      expect(totalLotSize).to.be.equal(_lotSize);
+      expect(node.status).to.be.equal(true);
 
       const pausedNode = await toggleDDCANodestatus(ddcaManager);
-      const totalLotSizeAfterPause = await ddcaManager.getTotalLotSize();
 
-      expect(pausedNode[8]).to.be.equal(false);
-      expect(totalLotSizeAfterPause).to.be.equal(0);
+      expect(pausedNode.status).to.be.equal(false);
     });
 
     /**
      *
      */
-    it('Unpause Dips Purchasing', async function () {
-      const { ddcaManager, usdt }: any = await loadFixture(deployContracts);
+    it('Failed to pause strategy status for other clients', async function () {
+      const { ddcaManager, usdt, accounts }: any =
+        await loadFixture(deployContracts);
+      const client = accounts[0];
 
       const _quoteTokenAmount = parseUnits('10000', 6);
-      const _lotSize = parseUnits('100', 6);
+      const _lotSize = parseUnits('5000', 6);
 
-      await createDDCA(ddcaManager, usdt, _quoteTokenAmount, _lotSize);
-      const pausedNode = await toggleDDCANodestatus(ddcaManager);
+      await airDrop(usdt, _quoteTokenAmount, client);
+      await createDDCA(ddcaManager, usdt, _quoteTokenAmount, _lotSize, client);
 
-      const totalLotSizeAfterPause = await ddcaManager.getTotalLotSize();
+      await expect(
+        toggleDDCANodestatus(ddcaManager, accounts[1]),
+      ).to.be.revertedWith('You are not the owner.');
+    });
 
-      expect(pausedNode[8]).to.be.equal(false);
-      expect(totalLotSizeAfterPause).to.be.equal(0);
+    /**
+     *
+     */
+    it('Failed to un-pause inactive strategy with 0 quote token amount', async function () {
+      const { ddcaManager, usdt, usdtAddress, accounts }: any =
+        await loadFixture(deployContracts);
+      const client = accounts[0];
+      const feesPercent = toBigInt(await ddcaManager.feesPercent());
 
-      const unpausedNode = await toggleDDCANodestatus(ddcaManager);
+      const _quoteTokenAmount = parseUnits('10000', 6);
+      const _lotSize = parseUnits('5000', 6);
 
-      const totalLotSizeAfterUnpause = await ddcaManager.getTotalLotSize();
+      await airDrop(usdt, _quoteTokenAmount, client);
 
-      expect(unpausedNode[8]).to.be.equal(true);
-      expect(totalLotSizeAfterUnpause).to.be.equal(_lotSize);
+      await createDDCA(ddcaManager, usdt, _quoteTokenAmount, _lotSize, client);
+      const toleratedSlippagePrice = parseUnits('20000', 6);
+      const amountIn =
+        _quoteTokenAmount -
+        (_quoteTokenAmount * feesPercent) / toBigInt(1000000);
+      const amountOut = getAmountOut(amountIn, toleratedSlippagePrice);
+
+      await ddcaManager.purchaseDips(toleratedSlippagePrice, amountOut);
+
+      const pausedNode = await toggleDDCANodestatus(ddcaManager, client);
+      expect(pausedNode.status).to.be.equal(false);
+
+      await ddcaManager
+        .connect(client)
+        .withdraw(usdtAddress, pausedNode.quoteTokenAmount);
+
+      await expect(
+        toggleDDCANodestatus(ddcaManager, client),
+      ).to.be.revertedWith('Not enough funds to activate strategy.');
+    });
+
+    /**
+     *
+     */
+    it('Un-pause inactive strategy with "quote token amount >= lotsize"', async function () {
+      const { ddcaManager, usdt, accounts }: any =
+        await loadFixture(deployContracts);
+      const client = accounts[0];
+      const feesPercent = toBigInt(await ddcaManager.feesPercent());
+
+      const _quoteTokenAmount = parseUnits('10000', 6);
+      const _lotSize = parseUnits('5000', 6);
+
+      await airDrop(usdt, _quoteTokenAmount, client);
+
+      await createDDCA(ddcaManager, usdt, _quoteTokenAmount, _lotSize, client);
+      const toleratedSlippagePrice = parseUnits('20000', 6);
+      const amountIn =
+        _quoteTokenAmount -
+        (_quoteTokenAmount * feesPercent) / toBigInt(1000000);
+      const amountOut = getAmountOut(amountIn, toleratedSlippagePrice);
+
+      await ddcaManager.purchaseDips(toleratedSlippagePrice, amountOut);
+
+      const pausedNode = await toggleDDCANodestatus(ddcaManager, client);
+      expect(pausedNode.status).to.be.equal(false);
+
+      const unpausedNode = await toggleDDCANodestatus(ddcaManager, client);
+
+      expect(unpausedNode.status).to.be.equal(true);
+      expect(unpausedNode.nextLotSize).to.be.equal(_lotSize);
+    });
+
+    /**
+     *
+     */
+    it('Un-pause inactive strategy with "0 > quote token amount < lotsize"', async function () {
+      const { ddcaManager, usdt, accounts }: any =
+        await loadFixture(deployContracts);
+      const client = accounts[0];
+      const feesPercent = toBigInt(await ddcaManager.feesPercent());
+
+      const _quoteTokenAmount = parseUnits('10000', 6);
+      const _lotSize = parseUnits('7500', 6);
+      const toleratedSlippagePrice = parseUnits('20000', 6);
+      const amountIn =
+        _quoteTokenAmount -
+        (_quoteTokenAmount * feesPercent) / toBigInt(1000000);
+      const amountOut = getAmountOut(amountIn, toleratedSlippagePrice);
+
+      await airDrop(usdt, _quoteTokenAmount, client);
+      await createDDCA(ddcaManager, usdt, _quoteTokenAmount, _lotSize, client);
+
+      await ddcaManager.purchaseDips(toleratedSlippagePrice, amountOut);
+
+      const pausedNode = await toggleDDCANodestatus(ddcaManager, client);
+
+      expect(pausedNode.status).to.be.equal(false);
+
+      const unpausedNode = await toggleDDCANodestatus(ddcaManager, client);
+
+      expect(unpausedNode.status).to.be.equal(true);
+      expect(unpausedNode.quoteTokenAmount).to.be.equal(
+        _quoteTokenAmount - _lotSize,
+      );
+      expect(unpausedNode.nextLotSize).to.be.equal(
+        unpausedNode.quoteTokenAmount,
+      );
     });
   });
 
@@ -279,104 +265,267 @@ describe('ERC20DDCAManager', function () {
    *
    */
   describe('Withdraw', function () {
-    it('Withdraw quote token from the contract', async function () {
-      const { ddcaManager, usdt, owner, usdtAddress }: any =
-        await loadFixture(deployContracts);
+    it('Only clients can call "withdraw" function', async function () {
+      const { ddcaManager, ddcaOwner, wbtcAddress, usdtAddress, nodes } =
+        await createMockDDCAStrategies();
 
-      const _quoteTokenAmount = parseUnits('10000', 6);
-      const _lotSize = parseUnits('1000', 6);
+      await expect(
+        ddcaManager.withdraw(wbtcAddress, nodes[0].baseTokenAmount),
+      ).to.be.revertedWith('You are not the owner.');
 
-      const initialBalance = await usdt.balanceOf(owner.address);
-
-      await createDDCA(ddcaManager, usdt, _quoteTokenAmount, _lotSize);
-
-      const balanceAfterDDCA = await usdt.balanceOf(owner.address);
-
-      const [, quote0] = await ddcaManager.getClientBalance(owner.address);
-
-      expect(quote0).to.be.equals(_quoteTokenAmount);
-
-      await ddcaManager.withdraw(usdtAddress, _quoteTokenAmount);
-
-      expect(balanceAfterDDCA + _quoteTokenAmount).to.be.equals(initialBalance);
+      await expect(
+        ddcaManager.withdraw(usdtAddress, nodes[0].quoteTokenAmount),
+      ).to.be.revertedWith('You are not the owner.');
     });
 
-    it('Withdraw base token from the contract', async function () {
-      const { ddcaManager, usdt, wbtcAddress, wbtc }: any =
-        await loadFixture(deployContracts);
+    it('Failed to withdraw for "amount <= 0"', async function () {
+      const { ddcaManager, wbtcAddress, clients } =
+        await createMockDDCAStrategies();
 
-      const ddcaAddress = await ddcaManager.getAddress();
+      const client = clients[0];
 
-      const _quoteTokenAmount = parseUnits('10000', 6);
-      const _lotSize = parseUnits('1000', 6);
+      await expect(
+        ddcaManager.connect(client).withdraw(wbtcAddress, toBigInt(0)),
+      ).to.be.revertedWith('Amount must be greater than 0.');
+    });
 
-      await createDDCA(ddcaManager, usdt, _quoteTokenAmount, _lotSize);
+    it('Failed to withdraw for a invalid token address', async function () {
+      const { ddcaManager, clients, feesPercent, totalLotSize } =
+        await createMockDDCAStrategies();
 
-      const totalLotSize = await ddcaManager.getTotalLotSize();
-      const feesPercent = toBigInt(await ddcaManager.feesPercent());
+      const inValidTokenAddress = '0x715262B3Ff8727cFB87d8DaAafc88ECB0f8e53dB';
+      const client = clients[0];
 
+      const toleratedSlippagePrice = parseUnits('20000', 6);
       const amountIn =
         totalLotSize - (totalLotSize * feesPercent) / toBigInt(1000000);
-      const amountOut = parseUnits('0.5', 18);
+      const amountOut = getAmountOut(amountIn, toleratedSlippagePrice);
 
-      await airDrop(wbtc, amountOut, ddcaAddress);
-      await ddcaManager._distributeReward(amountIn, amountOut);
+      await ddcaManager.purchaseDips(toleratedSlippagePrice, amountOut);
 
-      const node = await ddcaManager.getNode();
-
-      await ddcaManager.withdraw(wbtcAddress, node[1]);
-
-      const nodeAfterWithdrawal = await ddcaManager.getNode();
-
-      expect(nodeAfterWithdrawal[1]).to.be.equals(0);
+      await expect(
+        ddcaManager.connect(client).withdraw(inValidTokenAddress, amountOut),
+      )
+        .to.be.revertedWithCustomError(ddcaManager, 'ValidationError')
+        .withArgs('Invalid token address');
     });
 
-    it('Withdrawal can only be done by client', async function () {
+    it('Failed to withdraw base token if "amount > available balance"', async function () {
+      const { ddcaManager, wbtcAddress, clients, feesPercent, totalLotSize } =
+        await createMockDDCAStrategies();
+
+      const client = clients[0];
+
+      const toleratedSlippagePrice = parseUnits('20000', 6);
+      const amountIn =
+        totalLotSize - (totalLotSize * feesPercent) / toBigInt(1000000);
+      const amountOut = getAmountOut(amountIn, toleratedSlippagePrice);
+
+      await ddcaManager.purchaseDips(toleratedSlippagePrice, amountOut);
+
+      const node = await getNode(ddcaManager, client);
+
+      await expect(ddcaManager.connect(client).withdraw(wbtcAddress, amountOut))
+        .to.be.revertedWithCustomError(ddcaManager, 'InsufficientBalance')
+        .withArgs('WBTC', node.baseTokenAmount, amountOut);
+    });
+
+    it('Withdraw base token successfully', async function () {
+      const {
+        ddcaManager,
+        ddcaAddress,
+        wbtc,
+        wbtcAddress,
+        clients,
+        feesPercent,
+        totalLotSize,
+      } = await createMockDDCAStrategies();
+
+      const client = clients[0];
+
+      const tokenDecimal = await wbtc.decimals();
+      const toleratedSlippagePrice = parseUnits('20000', 6);
+      const amountIn =
+        totalLotSize - (totalLotSize * feesPercent) / toBigInt(1000000);
+      const amountOut = getAmountOut(
+        amountIn,
+        toleratedSlippagePrice,
+        tokenDecimal,
+      );
+
+      await ddcaManager.purchaseDips(toleratedSlippagePrice, amountOut);
+      await airDrop(wbtc, amountOut, ddcaAddress);
+      const node = await getNode(ddcaManager, client);
+
+      await expect(
+        ddcaManager.connect(client).withdraw(wbtcAddress, node.baseTokenAmount),
+      )
+        .to.be.emit(ddcaManager, 'Withdraw')
+        .withArgs(true, wbtcAddress, node.baseTokenAmount, client.address);
+
+      const nodeAfterWithdrawal = await getNode(ddcaManager, client);
+      expect(nodeAfterWithdrawal.baseTokenAmount).to.be.equals(0);
+
+      const wbtcBalance = await wbtc.balanceOf(client.address);
+      expect(wbtcBalance).to.be.equals(node.baseTokenAmount);
+    });
+
+    it('Failed to withdraw quote token if "amount > available balance"', async function () {
+      const { ddcaManager, usdtAddress, clients, feesPercent, totalLotSize } =
+        await createMockDDCAStrategies();
+
+      const client = clients[0];
+
+      const toleratedSlippagePrice = parseUnits('20000', 6);
+      const amountIn =
+        totalLotSize - (totalLotSize * feesPercent) / toBigInt(1000000);
+      const amountOut = getAmountOut(amountIn, toleratedSlippagePrice);
+
+      await ddcaManager.purchaseDips(toleratedSlippagePrice, amountOut);
+
+      const node = await getNode(ddcaManager, client);
+
+      await expect(
+        ddcaManager.connect(client).withdraw(usdtAddress, totalLotSize),
+      )
+        .to.be.revertedWithCustomError(ddcaManager, 'InsufficientBalance')
+        .withArgs('USDT', node.quoteTokenAmount, totalLotSize);
+    });
+
+    it('Withdraw quote token successfully', async function () {
       const {
         ddcaManager,
         usdt,
-        wbtcAddress,
-        wbtc,
         usdtAddress,
-        accounts,
-        ddcaAddress,
-      }: any = await loadFixture(deployContracts);
+        clients,
+        feesPercent,
+        totalLotSize,
+      } = await createMockDDCAStrategies();
 
-      const clientAccount = accounts[0];
+      const client = clients[0];
 
-      const _quoteTokenAmount = parseUnits('10000', 6);
-      const _lotSize = parseUnits('1000', 6);
-
-      await airDrop(usdt, _quoteTokenAmount, clientAccount);
-
-      await createDDCA(
-        ddcaManager,
-        usdt,
-        _quoteTokenAmount,
-        _lotSize,
-        clientAccount,
-      );
-
-      const totalLotSize = await ddcaManager.getTotalLotSize();
-      const feesPercent = toBigInt(await ddcaManager.feesPercent());
-
+      const toleratedSlippagePrice = parseUnits('20000', 6);
       const amountIn =
         totalLotSize - (totalLotSize * feesPercent) / toBigInt(1000000);
-      const amountOut = parseUnits('0.5', 18);
+      const amountOut = getAmountOut(amountIn, toleratedSlippagePrice);
 
-      await airDrop(wbtc, amountOut, ddcaAddress);
+      await ddcaManager.purchaseDips(toleratedSlippagePrice, amountOut);
+      const node = await getNode(ddcaManager, client);
 
-      await ddcaManager._distributeReward(amountIn, amountOut);
+      await expect(
+        ddcaManager
+          .connect(client)
+          .withdraw(usdtAddress, node.quoteTokenAmount),
+      )
+        .to.be.emit(ddcaManager, 'Withdraw')
+        .withArgs(true, usdtAddress, node.quoteTokenAmount, client.address);
 
-      const node = await ddcaManager.connect(clientAccount).getNode();
+      const nodeAfterWithdrawal = await getNode(ddcaManager, client);
+      expect(nodeAfterWithdrawal.quoteTokenAmount).to.be.equals(0);
+      expect(nodeAfterWithdrawal.status).to.be.equals(false);
+      expect(nodeAfterWithdrawal.nextLotSize).to.be.equals(0);
 
-      await expect(ddcaManager.withdraw(wbtcAddress, node[1]))
-        .to.be.revertedWithCustomError(ddcaManager, 'InsufficientBalance')
-        .withArgs('WBTC', 0, node[1]);
+      const usdtBalance = await usdt.balanceOf(client.address);
+      expect(usdtBalance).to.be.equals(node.quoteTokenAmount);
+    });
 
-      await expect(ddcaManager.withdraw(usdtAddress, node[2]))
-        .to.be.revertedWithCustomError(ddcaManager, 'InsufficientBalance')
-        .withArgs('USDT', 0, node[2]);
+    it('Withdraw quote token successfully, when updated "quote token balance <= 1 USD"', async function () {
+      const {
+        ddcaManager,
+        usdt,
+        usdtAddress,
+        clients,
+        feesPercent,
+        totalLotSize,
+      } = await createMockDDCAStrategies();
+
+      const client = clients[0];
+
+      const toleratedSlippagePrice = parseUnits('20000', 6);
+      const amountIn =
+        totalLotSize - (totalLotSize * feesPercent) / toBigInt(1000000);
+      const amountOut = getAmountOut(amountIn, toleratedSlippagePrice);
+
+      await ddcaManager.purchaseDips(toleratedSlippagePrice, amountOut);
+      const node = await getNode(ddcaManager, client);
+
+      const amountRequested = node.quoteTokenAmount - parseUnits('1', 6);
+
+      await expect(
+        ddcaManager.connect(client).withdraw(usdtAddress, amountRequested),
+      )
+        .to.be.emit(ddcaManager, 'Withdraw')
+        .withArgs(true, usdtAddress, node.quoteTokenAmount, client.address);
+
+      const nodeAfterWithdrawal = await getNode(ddcaManager, client);
+      expect(nodeAfterWithdrawal.quoteTokenAmount).to.be.equals(0);
+      expect(nodeAfterWithdrawal.status).to.be.equals(false);
+      expect(nodeAfterWithdrawal.nextLotSize).to.be.equals(0);
+
+      const usdtBalance = await usdt.balanceOf(client.address);
+      expect(usdtBalance).to.be.equals(node.quoteTokenAmount);
+    });
+
+    it('Withdraw quote token successfully and "0 > balance < lotsize"', async function () {
+      const {
+        ddcaManager,
+        usdt,
+        usdtAddress,
+        clients,
+        feesPercent,
+        totalLotSize,
+      } = await createMockDDCAStrategies();
+
+      const client = clients[0];
+
+      const toleratedSlippagePrice = parseUnits('20000', 6);
+      const amountIn =
+        totalLotSize - (totalLotSize * feesPercent) / toBigInt(1000000);
+      const amountOut = getAmountOut(amountIn, toleratedSlippagePrice);
+
+      await ddcaManager.purchaseDips(toleratedSlippagePrice, amountOut);
+      const node = await getNode(ddcaManager, client);
+
+      const amountToWithDraw = node.quoteTokenAmount - toBigInt(100000000);
+
+      await expect(
+        ddcaManager.connect(client).withdraw(usdtAddress, amountToWithDraw),
+      )
+        .to.be.emit(ddcaManager, 'Withdraw')
+        .withArgs(true, usdtAddress, amountToWithDraw, client.address);
+
+      const nodeAfterWithdrawal = await getNode(ddcaManager, client);
+      expect(nodeAfterWithdrawal.quoteTokenAmount).to.be.equals(
+        toBigInt(100000000),
+      );
+      expect(nodeAfterWithdrawal.nextLotSize).to.be.equals(toBigInt(100000000));
+      expect(nodeAfterWithdrawal.nextLotSize).to.be.not.equals(
+        nodeAfterWithdrawal.lotSize,
+      );
+
+      const usdtBalance = await usdt.balanceOf(client.address);
+      expect(usdtBalance).to.be.equals(amountToWithDraw);
+    });
+
+    it('Remove node if both quote and base token amount is zero', async function () {
+      const { ddcaManager, usdtAddress, clients } =
+        await createMockDDCAStrategies();
+
+      const client = clients[0];
+
+      const node = await getNode(ddcaManager, client);
+
+      await expect(
+        ddcaManager
+          .connect(client)
+          .withdraw(usdtAddress, node.quoteTokenAmount),
+      )
+        .to.be.emit(ddcaManager, 'Withdraw')
+        .withArgs(true, usdtAddress, node.quoteTokenAmount, client.address);
+
+      await expect(getNode(ddcaManager, client)).to.be.revertedWith(
+        'User does not have any account.',
+      );
     });
   });
 
@@ -384,98 +533,146 @@ describe('ERC20DDCAManager', function () {
     /**
      * Edit lot size of an active strategy
      */
-    it('Edit lot size of an active strategy', async function () {
-      const { ddcaManager, usdt }: any = await loadFixture(deployContracts);
-
+    it('Only client can update lotsize', async function () {
+      const { ddcaManager, usdt, accounts }: any =
+        await loadFixture(deployContracts);
+      const client = accounts[1];
       const _quoteTokenAmount = parseUnits('10000', 6);
       const _lotSize = parseUnits('1000', 6);
       const _updatedLotSize = parseUnits('500', 6);
 
-      await createDDCA(ddcaManager, usdt, _quoteTokenAmount, _lotSize);
+      await airDrop(usdt, _quoteTokenAmount, client);
+      await createDDCA(ddcaManager, usdt, _quoteTokenAmount, _lotSize, client);
 
-      const initialNode = await ddcaManager.getNode();
+      await expect(
+        ddcaManager.updateLotSize(_updatedLotSize),
+      ).to.be.revertedWith('You are not the owner.');
+    });
 
-      await ddcaManager.updateLotSize(_updatedLotSize);
+    /**
+     * Edit lot size of an active strategy
+     */
+    it('Failed to update lotsize to below min. allowed lot size', async function () {
+      const { ddcaManager, usdt, accounts }: any =
+        await loadFixture(deployContracts);
+      const client = accounts[1];
+      const _quoteTokenAmount = parseUnits('10000', 6);
+      const _lotSize = parseUnits('1000', 6);
+      const _updatedLotSize = parseUnits('4', 6);
 
-      const updatedNode = await ddcaManager.getNode();
+      await airDrop(usdt, _quoteTokenAmount, client);
+      await createDDCA(ddcaManager, usdt, _quoteTokenAmount, _lotSize, client);
 
-      expect(initialNode[7]).to.be.equal(_lotSize);
-      expect(updatedNode[7]).to.be.equal(_updatedLotSize);
+      await expect(ddcaManager.connect(client).updateLotSize(_updatedLotSize))
+        .to.be.revertedWithCustomError(ddcaManager, 'ValidationError')
+        .withArgs('Lot size is too low.');
+    });
+
+    /**
+     * Edit lot size of an active strategy
+     */
+    it('Failed to update lotsize to above quote token balance', async function () {
+      const { ddcaManager, usdt, accounts }: any =
+        await loadFixture(deployContracts);
+      const client = accounts[1];
+      const _quoteTokenAmount = parseUnits('10000', 6);
+      const _lotSize = parseUnits('1000', 6);
+      const _updatedLotSize = parseUnits('40000', 6);
+
+      await airDrop(usdt, _quoteTokenAmount, client);
+      await createDDCA(ddcaManager, usdt, _quoteTokenAmount, _lotSize, client);
+
+      await expect(
+        ddcaManager.connect(client).updateLotSize(_updatedLotSize, client),
+      )
+        .to.be.revertedWithCustomError(ddcaManager, 'ValidationError')
+        .withArgs('New lot size is greater than quote token amount.');
     });
 
     /**
      * Edit lot size of an inactive strategy
      */
     it('Edit lot size of an inactive strategy', async function () {
-      const { ddcaManager, usdt }: any = await loadFixture(deployContracts);
-
+      const { ddcaManager, usdt, accounts }: any =
+        await loadFixture(deployContracts);
+      const client = accounts[1];
       const _quoteTokenAmount = parseUnits('10000', 6);
       const _lotSize = parseUnits('1000', 6);
       const _updatedLotSize = parseUnits('500', 6);
 
-      await createDDCA(ddcaManager, usdt, _quoteTokenAmount, _lotSize);
+      await airDrop(usdt, _quoteTokenAmount, client);
+      await createDDCA(ddcaManager, usdt, _quoteTokenAmount, _lotSize, client);
 
-      const activeNode = await ddcaManager.getNode();
+      const pausedNode = await toggleDDCANodestatus(ddcaManager, client);
 
-      expect(activeNode[8]).to.be.equal(true);
-      expect(activeNode[7]).to.be.equal(_lotSize);
+      expect(pausedNode.status).to.be.equals(false);
+      expect(pausedNode.lotSize).to.be.equals(_lotSize);
+      expect(pausedNode.nextLotSize).to.be.equals(_lotSize);
 
-      await toggleDDCANodestatus(ddcaManager);
+      await ddcaManager.connect(client).updateLotSize(_updatedLotSize, client);
 
-      await ddcaManager.updateLotSize(_updatedLotSize);
+      const activeNode = await getNode(ddcaManager, client);
 
-      const updatedNode = await ddcaManager.getNode();
-
-      expect(updatedNode[7]).to.be.equal(_updatedLotSize);
-      expect(updatedNode[8]).to.be.equal(true);
+      expect(activeNode.status).to.be.equals(true);
+      expect(activeNode.lotSize).to.be.equals(_updatedLotSize);
+      expect(activeNode.nextLotSize).to.be.equals(_updatedLotSize);
     });
 
     /**
-     *
+     * Edit lot size of an inactive strategy
      */
-    it('Edit lot size of an active strategy reverting with ValidationError', async function () {
-      const { ddcaManager, usdt }: any = await loadFixture(deployContracts);
-
+    it('Edit lot size of an active strategy', async function () {
+      const { ddcaManager, usdt, accounts }: any =
+        await loadFixture(deployContracts);
+      const client = accounts[1];
       const _quoteTokenAmount = parseUnits('10000', 6);
       const _lotSize = parseUnits('1000', 6);
-      const _updatedLotSize = parseUnits('50000', 6);
+      const _updatedLotSize = parseUnits('500', 6);
 
-      await createDDCA(ddcaManager, usdt, _quoteTokenAmount, _lotSize);
+      await airDrop(usdt, _quoteTokenAmount, client);
+      await createDDCA(ddcaManager, usdt, _quoteTokenAmount, _lotSize, client);
 
-      await expect(ddcaManager.updateLotSize(_updatedLotSize))
-        .to.be.revertedWithCustomError(ddcaManager, 'ValidationError')
-        .withArgs('New lot size is greater than quote token amount.');
+      const node = await getNode(ddcaManager, client);
+
+      expect(node.lotSize).to.be.equals(_lotSize);
+      expect(node.nextLotSize).to.be.equals(_lotSize);
+
+      await ddcaManager.connect(client).updateLotSize(_updatedLotSize, client);
+
+      const updatedNode = await getNode(ddcaManager, client);
+
+      expect(updatedNode.lotSize).to.be.equals(_updatedLotSize);
+      expect(updatedNode.nextLotSize).to.be.equals(_updatedLotSize);
     });
 
     /**
      * Checking the total order size of each swap
      */
     it('Total lot size equals to the sum of all the active strategy lot sizes', async function () {
-      const { ddcaManager, usdt, accounts }: any =
-        await loadFixture(deployContracts);
+      const {
+        ddcaManager,
+        usdt,
+        usdtAddress,
+        clients,
+        feesPercent,
+        totalLotSize,
+        nodes,
+      } = await createMockDDCAStrategies();
 
-      const client1 = accounts[0];
-      const client2 = accounts[1];
+      const client = clients[0];
+      const node = await getNode(ddcaManager, client);
 
-      const _quoteTokenAmount = parseUnits('10000', 6);
-      const _lotSize = parseUnits('1000', 6);
+      const expectedTotalLotSize = nodes.reduce(
+        (prev: bigint, curr: Node) => prev + curr.nextLotSize,
+        toBigInt(0),
+      );
+      expect(totalLotSize).to.be.equals(expectedTotalLotSize);
 
-      await airDrop(usdt, _quoteTokenAmount, client1);
-      await airDrop(usdt, _quoteTokenAmount, client2);
-
-      await createDDCA(ddcaManager, usdt, _quoteTokenAmount, _lotSize);
-      await createDDCA(ddcaManager, usdt, _quoteTokenAmount, _lotSize, client1);
-      await createDDCA(ddcaManager, usdt, _quoteTokenAmount, _lotSize, client2);
-
-      const totalLotSize = await ddcaManager.getTotalLotSize();
-
-      expect(totalLotSize).to.be.equals(_lotSize + _lotSize + _lotSize);
-
-      await toggleDDCANodestatus(ddcaManager, client1);
+      await toggleDDCANodestatus(ddcaManager, client);
 
       const newTotalLotSize = await ddcaManager.getTotalLotSize();
 
-      expect(newTotalLotSize).to.be.equals(_lotSize + _lotSize);
+      expect(newTotalLotSize).to.be.equals(totalLotSize - node.nextLotSize);
     });
   });
 
@@ -483,110 +680,170 @@ describe('ERC20DDCAManager', function () {
     /**
      * Top up current strategy with quote token
      */
-    it('Top-up of an active strategy', async function () {
-      const { ddcaManager, usdt }: any = await loadFixture(deployContracts);
+    it('Only clients can call "topUp" function', async function () {
+      const { ddcaManager } = await createMockDDCAStrategies();
 
-      const _quoteTokenAmount = parseUnits('10000', 6);
-      const _lotSize = parseUnits('1000', 6);
-      const _topUpAmount = parseUnits('10000', 6);
+      const topUpAmount = parseUnits('9', 6);
 
-      const initialNode = await createDDCA(
-        ddcaManager,
-        usdt,
-        _quoteTokenAmount,
-        _lotSize,
+      await expect(ddcaManager.topUp(topUpAmount)).to.be.revertedWith(
+        'You are not the owner.',
       );
-
-      const updatedNode = await topUpDDCA(ddcaManager, usdt, _topUpAmount);
-
-      expect(initialNode[2]).to.be.equals(_quoteTokenAmount);
-      expect(updatedNode[2]).to.be.equals(_quoteTokenAmount + _topUpAmount);
     });
 
     /**
      * Top up current strategy with quote token
      */
-    it('Top-up of an inactive strategy', async function () {
-      const { ddcaManager, usdt }: any = await loadFixture(deployContracts);
+    it('Failed to top-up an active strategy with "amount < min. allowed"', async function () {
+      const { ddcaManager, clients } = await createMockDDCAStrategies();
 
-      const _quoteTokenAmount = parseUnits('10000', 6);
-      const _lotSize = parseUnits('1000', 6);
-      const _topUpAmount = parseUnits('10000', 6);
+      const client = clients[0];
+      const node = await getNode(ddcaManager, client);
 
-      await createDDCA(ddcaManager, usdt, _quoteTokenAmount, _lotSize);
+      const topUpAmount = parseUnits('9', 6);
 
-      const pausedNode = await toggleDDCANodestatus(ddcaManager);
+      await expect(ddcaManager.connect(client).topUp(topUpAmount))
+        .to.be.revertedWithCustomError(ddcaManager, 'ValidationError')
+        .withArgs('Deposit amount is too low.');
+    });
 
-      expect(pausedNode[2]).to.be.equals(_quoteTokenAmount);
-      expect(pausedNode[8]).to.be.equals(false);
+    /**
+     * Top up current strategy with quote token
+     */
+    it('Top-up of an active strategy', async function () {
+      const { ddcaManager, clients, usdt, usdtAddress } =
+        await createMockDDCAStrategies();
 
-      const updatedNode = await topUpDDCA(ddcaManager, usdt, _topUpAmount);
+      const client = clients[0];
+      const node = await getNode(ddcaManager, client);
 
-      expect(updatedNode[2]).to.be.equals(_quoteTokenAmount + _topUpAmount);
-      expect(updatedNode[8]).to.be.equals(true);
+      const topUpAmount = parseUnits('100', 6);
+      await airDrop(usdt, topUpAmount, client);
+
+      const toppedUpNode = await topUpDDCA(
+        ddcaManager,
+        usdt,
+        topUpAmount,
+        client,
+      );
+
+      expect(toppedUpNode.quoteTokenAmount).to.be.equals(
+        node.quoteTokenAmount + topUpAmount,
+      );
+    });
+
+    /**
+     * Top up current strategy with quote token
+     */
+    it('Top-up of an inactive strategy and "quote token amount >= lotsize"', async function () {
+      const { ddcaManager, clients, usdt, usdtAddress } =
+        await createMockDDCAStrategies();
+
+      const client = clients[0];
+
+      ddcaManager.connect(client).withdraw(usdtAddress, parseUnits('9500', 6));
+
+      const pausedNode = await toggleDDCANodestatus(ddcaManager, client);
+
+      expect(pausedNode.status).to.be.equals(false);
+
+      const topUpAmount = parseUnits('5000', 6);
+      await airDrop(usdt, topUpAmount, client);
+
+      const toppedUpNode = await topUpDDCA(
+        ddcaManager,
+        usdt,
+        topUpAmount,
+        client,
+      );
+
+      expect(toppedUpNode.quoteTokenAmount).to.be.greaterThanOrEqual(
+        toppedUpNode.lotSize,
+      );
+      expect(toppedUpNode.nextLotSize).to.be.equals(toppedUpNode.lotSize);
+      expect(toppedUpNode.status).to.be.equals(true);
+      expect(toppedUpNode.quoteTokenAmount).to.be.equals(
+        pausedNode.quoteTokenAmount + topUpAmount,
+      );
+    });
+
+    /**
+     * Top up current strategy with quote token
+     */
+    it('Top-up of an inactive strategy and "quote token amount < lotsize"', async function () {
+      const { ddcaManager, clients, usdt, usdtAddress } =
+        await createMockDDCAStrategies();
+
+      const client = clients[0];
+
+      ddcaManager.connect(client).withdraw(usdtAddress, parseUnits('9500', 6));
+
+      const pausedNode = await toggleDDCANodestatus(ddcaManager, client);
+
+      expect(pausedNode.status).to.be.equals(false);
+
+      const topUpAmount = parseUnits('500', 6);
+      await airDrop(usdt, topUpAmount, client);
+
+      const toppedUpNode = await topUpDDCA(
+        ddcaManager,
+        usdt,
+        topUpAmount,
+        client,
+      );
+
+      expect(toppedUpNode.quoteTokenAmount).to.be.lessThan(
+        toppedUpNode.lotSize,
+      );
+      expect(toppedUpNode.nextLotSize).to.be.equals(
+        toppedUpNode.quoteTokenAmount,
+      );
+      expect(toppedUpNode.status).to.be.equals(true);
+      expect(toppedUpNode.quoteTokenAmount).to.be.equals(
+        pausedNode.quoteTokenAmount + topUpAmount,
+      );
     });
   });
 
   describe('Reward distribution', function () {
     /**
-     * ! We need to change the function to public, for testing
+     *
      */
-    it('Validate reward distribution between active strategies', async function () {
-      const { ddcaManager, usdt, accounts }: any =
-        await loadFixture(deployContracts);
+    it('Only active strategies receives rewards', async function () {
+      const { ddcaManager, nodes, clients, feesPercent } =
+        await createMockDDCAStrategies();
 
-      const feesPercent = toBigInt(await ddcaManager.feesPercent());
-
-      const client1 = accounts[0];
-      const client2 = accounts[1];
-
-      const _quoteTokenAmount = parseUnits('10000', 6);
-
-      const _lotSize1 = parseUnits('250', 6);
-      const _lotSize2 = parseUnits('150', 6);
-      const _lotSize3 = parseUnits('300', 6);
-
-      await airDrop(usdt, _quoteTokenAmount, client1);
-      await airDrop(usdt, _quoteTokenAmount, client2);
-
-      await createDDCA(ddcaManager, usdt, _quoteTokenAmount, _lotSize1);
-      await createDDCA(
-        ddcaManager,
-        usdt,
-        _quoteTokenAmount,
-        _lotSize2,
-        client1,
+      const intialLotSize = nodes.reduce(
+        (prev: bigint, curr: Node) => prev + curr.nextLotSize,
+        toBigInt(0),
       );
-      await createDDCA(
-        ddcaManager,
-        usdt,
-        _quoteTokenAmount,
-        _lotSize3,
-        client2,
-      );
+
+      const pausedNode = await toggleDDCANodestatus(ddcaManager, clients[0]);
 
       const totalLotSize = await ddcaManager.getTotalLotSize();
 
-      const expectedTotalLotSize = _lotSize1 + _lotSize2 + _lotSize3;
+      expect(pausedNode.status).to.be.equals(false);
+      expect(totalLotSize).to.be.equals(intialLotSize - pausedNode.nextLotSize);
 
-      expect(totalLotSize).to.be.equals(expectedTotalLotSize);
-
+      const toleratedSlippagePrice = parseUnits('20000', 6);
       const amountIn =
         totalLotSize - (totalLotSize * feesPercent) / toBigInt(1000000);
-      const amountOut = parseUnits('0.5', 18);
 
-      await ddcaManager._distributeReward(amountIn, amountOut);
+      const amountOut = getAmountOut(amountIn, toleratedSlippagePrice);
+
+      await ddcaManager.purchaseDips(toleratedSlippagePrice, amountOut);
 
       const allNodes = await ddcaManager.getAllNodes();
 
-      allNodes.forEach((node: any) => {
-        expect(node[8]).to.be.equals(true);
-        const rewardReceived = node[1];
+      allNodes.forEach((ddcaNode: any) => {
+        const node = getNodeFromDDCANode(ddcaNode);
 
-        const lotSize = node[7];
+        const rewardReceived = node.baseTokenAmount;
+        const status = node.status;
+
+        const lotSize = node.nextLotSize;
         const contribution =
           lotSize - (lotSize * feesPercent) / toBigInt(1000000);
-        const share = (contribution * amountOut) / amountIn;
+        const share = status ? (contribution * amountOut) / amountIn : 0;
 
         expect(share).to.be.equals(rewardReceived);
       });
@@ -595,76 +852,138 @@ describe('ERC20DDCAManager', function () {
     /**
      * ! We need to change the function to public, for testing
      */
-    it('Validate reward distribution does not includes inactive strategies', async function () {
-      const { ddcaManager, usdt, accounts }: any =
-        await loadFixture(deployContracts);
-
-      const feesPercent = toBigInt(await ddcaManager.feesPercent());
-
-      const client1 = accounts[0];
-      const client2 = accounts[1];
-
-      const _quoteTokenAmount = parseUnits('10000', 6);
-
-      const _lotSize1 = parseUnits('250', 6);
-      const _lotSize2 = parseUnits('150', 6);
-      const _lotSize3 = parseUnits('300', 6);
-
-      await airDrop(usdt, _quoteTokenAmount, client1);
-      await airDrop(usdt, _quoteTokenAmount, client2);
-
-      await createDDCA(ddcaManager, usdt, _quoteTokenAmount, _lotSize1);
-      await createDDCA(
-        ddcaManager,
-        usdt,
-        _quoteTokenAmount,
-        _lotSize2,
-        client1,
-      );
-      await createDDCA(
-        ddcaManager,
-        usdt,
-        _quoteTokenAmount,
-        _lotSize3,
-        client2,
-      );
-
-      const pausedNode = await toggleDDCANodestatus(ddcaManager, client1);
+    it('Node is disabled if "quote token balance = 0"', async function () {
+      const { ddcaManager, nodes, feesPercent } =
+        await createMockDDCAStrategies();
 
       const totalLotSize = await ddcaManager.getTotalLotSize();
 
-      const intialLotSize = _lotSize1 + _lotSize2 + _lotSize3;
-      expect(pausedNode[8]).to.be.equals(false);
-      expect(totalLotSize).to.be.equals(intialLotSize - pausedNode[7]);
+      const expectedTotalLotSize = nodes.reduce(
+        (prev: bigint, curr: Node) => prev + curr.nextLotSize,
+        toBigInt(0),
+      );
 
+      expect(totalLotSize).to.be.equals(expectedTotalLotSize);
+
+      const toleratedSlippagePrice = parseUnits('20000', 6);
       const amountIn =
         totalLotSize - (totalLotSize * feesPercent) / toBigInt(1000000);
-      const amountOut = parseUnits('0.5', 18);
+      const amountOut = getAmountOut(amountIn, toleratedSlippagePrice);
 
-      await ddcaManager._distributeReward(amountIn, amountOut);
+      await ddcaManager.purchaseDips(toleratedSlippagePrice, amountOut);
+      await ddcaManager.purchaseDips(toleratedSlippagePrice, amountOut);
 
       const allNodes = await ddcaManager.getAllNodes();
 
-      allNodes.forEach((node: any) => {
-        const rewardReceived = node[1];
+      allNodes.forEach((ddcaNode: any) => {
+        const node = getNodeFromDDCANode(ddcaNode);
 
-        if (node[8]) {
-          expect(node[8]).to.be.equals(true);
+        const rewardReceived = node.baseTokenAmount;
 
-          const lotSize = node[7];
-          const contribution =
-            lotSize - (lotSize * feesPercent) / toBigInt(1000000);
-          const share = (contribution * amountOut) / amountIn;
+        const lotSize = node.lotSize;
+        const contribution =
+          lotSize - (lotSize * feesPercent) / toBigInt(1000000);
+        const share = toBigInt(2) * ((contribution * amountOut) / amountIn);
 
-          expect(share).to.be.equals(rewardReceived);
-        } else {
-          expect(0).to.be.equals(rewardReceived);
-        }
+        expect(share).to.be.equals(rewardReceived);
+
+        expect(node.status).to.be.equals(
+          node.quoteTokenAmount == toBigInt(0) ? false : true,
+        );
+        expect(node.nextLotSize).to.be.equals(
+          node.quoteTokenAmount == toBigInt(0) ? toBigInt(0) : node.lotSize,
+        );
+      });
+    });
+
+    /**
+     * ! We need to change the function to public, for testing
+     */
+    it('Next lotsize is adjusted if " 0 < quote token balance < lotsize"', async function () {
+      const { ddcaManager, nodes, feesPercent } =
+        await createMockDDCAStrategies();
+
+      const totalLotSize = await ddcaManager.getTotalLotSize();
+
+      const expectedTotalLotSize = nodes.reduce(
+        (prev: bigint, curr: Node) => prev + curr.nextLotSize,
+        toBigInt(0),
+      );
+
+      expect(totalLotSize).to.be.equals(expectedTotalLotSize);
+
+      const toleratedSlippagePrice = parseUnits('20000', 6);
+      const amountIn =
+        totalLotSize - (totalLotSize * feesPercent) / toBigInt(1000000);
+      const amountOut = getAmountOut(amountIn, toleratedSlippagePrice);
+
+      [1, 2, 3].forEach(async () => {
+        await ddcaManager.purchaseDips(toleratedSlippagePrice, amountOut);
+
+        const allNodes = await ddcaManager.getAllNodes();
+
+        allNodes.forEach((ddcaNode: any) => {
+          const node = getNodeFromDDCANode(ddcaNode);
+
+          if (node.status) {
+            const rewardReceived = node.baseTokenAmount;
+
+            const lotSize = node.lotSize;
+            const contribution =
+              lotSize - (lotSize * feesPercent) / toBigInt(1000000);
+            const share = (contribution * amountOut) / amountIn;
+
+            expect(share).to.be.equals(rewardReceived);
+
+            expect(node.status).to.be.equals(
+              node.quoteTokenAmount == toBigInt(0) ? false : true,
+            );
+
+            if (node.quoteTokenAmount > 0) {
+              expect(node.nextLotSize).to.be.equals(
+                node.quoteTokenAmount < node.lotSize
+                  ? node.quoteTokenAmount
+                  : node.lotSize,
+              );
+            } else {
+              expect(node.nextLotSize).to.be.equals(
+                node.quoteTokenAmount == toBigInt(0)
+                  ? toBigInt(0)
+                  : node.lotSize,
+              );
+            }
+          }
+        });
       });
     });
   });
 
   describe('Renora fees', function () {
+    it('Fees getting accumulated after Dips Purchasing', async function () {
+      const { ddcaManager, usdt, feesPercent, totalLotSize, ddcaOwner } =
+        await createMockDDCAStrategies();
+
+      const toleratedSlippagePrice = parseUnits('20000', 6);
+      const swapFeeAmount = (totalLotSize * feesPercent) / toBigInt(1000000);
+      const amountIn = totalLotSize - swapFeeAmount;
+
+      const amountOut = getAmountOut(amountIn, toleratedSlippagePrice);
+
+      await ddcaManager.purchaseDips(toleratedSlippagePrice, amountOut);
+      await ddcaManager.purchaseDips(toleratedSlippagePrice, amountOut);
+
+      const totalFeesCollected = await ddcaManager.getTotalFeesCollected();
+
+      expect(totalFeesCollected).to.be.equals(swapFeeAmount * toBigInt(2));
+
+      const preBal = await usdt.balanceOf(ddcaOwner);
+
+      await ddcaManager.withdrawFees(ddcaOwner, totalFeesCollected);
+
+      const postBal = await usdt.balanceOf(ddcaOwner);
+      expect(postBal).to.be.equals(preBal + totalFeesCollected);
+    });
+
     it('Update fees percent by owner only', async function () {
       const { ddcaManager, accounts }: any = await loadFixture(deployContracts);
 
@@ -727,7 +1046,7 @@ describe('ERC20DDCAManager', function () {
 
       const initialBalance = await usdt.balanceOf(ddcaAddress);
 
-      expect(clientNode[2]).to.be.equals(_quoteTokenAmount);
+      expect(clientNode.quoteTokenAmount).to.be.equals(_quoteTokenAmount);
 
       await expect(
         usdt.approve(evilAccount.address, _quoteTokenAmount),
