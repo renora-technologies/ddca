@@ -1,8 +1,9 @@
 import { vars } from 'hardhat/config';
 
-import { ARBITRUM as arbitrumOne } from '../constants/networks';
+import { ARBITRUM as ARBITRUM_ONE } from '../constants/networks';
 
 const METAMASK_PRIVATE_KEY = vars.get('METAMASK_PRIVATE_KEY');
+const RENORA_PRIVATE_KEY = vars.get('RENORA_PRIVATE_KEY');
 
 export const ARBITRUM_SEPOLIA_CHAIN_ID = 421_614;
 export const ARBITRUM_CHAIN_ID = 42_161;
@@ -27,19 +28,19 @@ export const ARBITRUM = {
     },
   },
   MAINNET: {
-    ID: arbitrumOne.MAINNET,
+    ID: ARBITRUM_ONE.MAINNET,
     NAME: 'Arbitrum One',
     CONFIG: {
       url: 'https://arb1.arbitrum.io/rpc',
-      accounts: [METAMASK_PRIVATE_KEY],
+      accounts: [RENORA_PRIVATE_KEY],
       chainId: ARBITRUM_CHAIN_ID,
     },
     EXPLORER: {
-      network: arbitrumOne.MAINNET,
+      network: ARBITRUM_ONE.MAINNET,
       chainId: ARBITRUM_CHAIN_ID,
       urls: {
         name: 'Arbiscan',
-        apiURL: 'https://api.arbiscan.io/api',
+        apiURL: 'https://api.etherscan.io/v2/api?chainid=42161',
         browserURL: 'https://arbiscan.io',
       },
     },
