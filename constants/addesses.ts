@@ -1,14 +1,4 @@
-import { ARBITRUM as arbitrumOne, ETHERLINK as etherlink } from './networks';
-
-export const ETHERLINK = {
-  [etherlink.TESTNET]: {
-    USDT: '0xBf8c88822671E86333d9220724432Ae651fB1140',
-    WBTC: '0xaE2Fbb70fD10422EF07E53Ec5083e2b1F6152205',
-    ETH: '0x8cfF9C622b5382858686aa3094D52e368914863E',
-    WXTZ: '0x8A2d00F814Bc19653E7F9AEA8572C1F2d1Db633e',
-    SWAP_ROUTER: '0x789298Cf1C48fC6bb02DA71bBDc3A59d1A07b4c6',
-  },
-};
+import { ARBITRUM as arbitrumOne } from './networks';
 
 export const ARBITRRUM = {
   [arbitrumOne.MAINNET]: {
@@ -18,5 +8,16 @@ export const ARBITRRUM = {
     WETH: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
     SWAP_ROUTER: '0xE592427A0AEce92De3Edee1F18E0157C05861564',
     QUOTER_V2: '0x61fFE014bA17989E743c5F6cB21bF9697530B21e',
+  },
+};
+
+export const LOCALHOST = {
+  ['localhost']: {
+    USDT: '',
+    USDC: '',
+    WBTC: '',
+    WETH: '',
+    SWAP_ROUTER: '',
+    QUOTER_V2: '',
   },
 };
